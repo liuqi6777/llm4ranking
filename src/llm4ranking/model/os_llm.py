@@ -51,3 +51,20 @@ class OSLlm:
     def create_messages(self, **kwargs) -> str:
         raise NotImplementedError
 
+    def _mask_labels(
+        self, 
+        messages: list[dict[str, str]],
+        labels: torch.Tensor,
+    ) -> torch.Tensor:
+        for message_idx, message in enumerate(messages):
+            if message["role"] != "assistant":
+                message_start_idx = self._get_messages_length(messages[:message_idx]) if message_idx > 0 else 0
+                message_end_idx = self._get_messages_length(messages[:message_idx+1])         
+                labels[:, message_start_idx:message_end_idx] = -100
+                if message_end_idx >= self.tokenizer.model_max_length:
+                    break
+        return labels
+
+    def _get_messages_length(self, messages: list[dict[str, str]]) -> int:
+        return self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt", truncation=True).shape[1]
+

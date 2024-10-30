@@ -4,7 +4,7 @@ import torch
 from llm4ranking.model.os_llm import OSLlm
 
 
-class ListwiseRanker(OSLlm):
+class ListwiseGeneration(OSLlm):
 
     def _add_system_message(self) -> str:
         return f"You are RankLLM, an intelligent assistant that can rank passages based on their relevancy to the query."
@@ -25,7 +25,7 @@ class ListwiseRanker(OSLlm):
         input_context = self._add_prefix_prompt(query, num)
         for i, content in enumerate(candidates):
             content = self._replace_number(content.strip())
-            input_context += f"[{i + 1}] {content}\n"
+            input_context += f"[{i + 1}] {content}\n\n"
         input_context += self._add_post_prompt(query, num)
         # messages.append({"role": "system", "content": self._add_system_message()})
         messages.append({"role": "user", "content": input_context})
@@ -59,7 +59,7 @@ class ListwiseRanker(OSLlm):
 
     @torch.no_grad()
     def __call__(self, query: str, candidates: list[str]) -> dict[str]:
-        messages = self.create_messages(query, [p["content"] for p in candidates])
+        messages = self.create_messages(query, candidates)
         outputs = self.get_response(messages)
         permutation = self.parse_output(outputs)
         original_rank = [tt for tt in range(len(candidates))]
