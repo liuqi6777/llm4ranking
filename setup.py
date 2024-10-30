@@ -13,9 +13,9 @@ setup(
     author='Qi Liu',
     author_email='qiliu6777@gmail.com',
     description='',
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     install_requires=[
-        'accelerate>=0.26.1',
-        'transformers>=4.37.2',
+        'accelerate>=1.0.1',
+        'transformers>=4.46.0',
     ]
 )
