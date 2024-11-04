@@ -25,7 +25,7 @@ class PointwiseReranker(Reranker):
         ranking_func: Callable[[str, str], float],
         **kwargs: dict[str, Any],
     ) -> tuple[list[str], list[int]]:
-        ranked_result, ranked_indices = zip(*sorted(enumerate(candidates), key=lambda x: ranking_func(query, x[1]), reverse=True))
+        ranked_indices, ranked_result = zip(*sorted(enumerate(candidates), key=lambda x: ranking_func(query, x[1]), reverse=True))
         return ranked_result, ranked_indices
 
 
