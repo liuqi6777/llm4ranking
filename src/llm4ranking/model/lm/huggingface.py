@@ -1,35 +1,38 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from llm4ranking.model.lm.base import LM
 
-class OSLlm:
+
+class HFLM(LM):
     def __init__(
         self,
-        model_name_or_path: str,
+        model_name_or_path: str = None,
+        model = None,
+        tokenizer = None,
     ):
         super().__init__()
         self.model_name = model_name_or_path
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            torch_dtype="auto",
-            device_map="auto"
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name_or_path,
-            padding_side="right"
-        )
+        if model is not None and tokenizer is not None:
+            self.model = model
+            self.tokenizer = tokenizer
+        else:
+            assert model_name_or_path is not None, "model_name_or_path must be provided."
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name_or_path,
+                torch_dtype="auto",
+                device_map="auto"
+            )
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_name_or_path,
+                padding_side="right"
+            )
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.eval()
-
-    def eval(self):
         self.model.eval()
 
-    @torch.no_grad()
-    def get_response(
+    def generate(
         self,
         messages: dict[str, str],
-        max_length: int = 4096,
-        max_new_tokens: int = 128,
         **kwargs
     ) -> str:
         input_ids = self.tokenizer.apply_chat_template(
@@ -37,19 +40,21 @@ class OSLlm:
             add_generation_prompt=True,
             return_tensors="pt",
             truncation=True,
-            max_length=max_length
         ).to(self.device)
-        outputs = self.model.generate(
-            input_ids=input_ids,
-            max_new_tokens=max_new_tokens,
-            pad_token_id=self.tokenizer.eos_token_id,
-            do_sample=False,
-            **kwargs
-        )[0, input_ids.shape[-1]:].cpu()
+        with torch.no_grad():
+            outputs = self.model.generate(
+                input_ids=input_ids,
+                pad_token_id=self.tokenizer.eos_token_id,
+                **kwargs
+            )[0, input_ids.shape[-1]:].cpu()
         return self.tokenizer.decode(outputs, skip_special_tokens=True)
 
-    def create_messages(self, **kwargs) -> str:
-        raise NotImplementedError
+    def loglikelihood(
+        self,
+        messages: dict[str, str],
+        **kwargs
+    ) -> float:
+        pass
 
     def _mask_labels(
         self, 
