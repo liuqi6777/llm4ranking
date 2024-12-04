@@ -36,7 +36,7 @@ class PairwiseReranker(Reranker):
         query: str,
         candidates: list[str],
         method: str,
-        ranking_func: Callable[[str, str], float],
+        ranking_func: Callable[[str, str, str], int],
         **kwargs: dict[str, Any],
     ):
         return getattr(self, f"_{method}")(query, candidates, ranking_func, **kwargs)
@@ -152,9 +152,10 @@ class ListwiseSilidingWindowReranker(Reranker):
 
             # receive permutation
             cut_range = copy.deepcopy(ranked_result[start_pos:end_pos])
+            cut_range_indices = copy.deepcopy(ranked_indices[start_pos:end_pos])
             for local_rank, index in enumerate(permutation):
                 ranked_result[start_pos + local_rank] = copy.deepcopy(cut_range[index])
-            ranked_indices[start_pos:end_pos] = [x + start_pos for x in permutation]
+                ranked_indices[start_pos + local_rank] = cut_range_indices[index]
 
             start_pos, end_pos = start_pos - step, end_pos - step
 
