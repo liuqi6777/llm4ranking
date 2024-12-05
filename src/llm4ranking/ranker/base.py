@@ -59,7 +59,8 @@ class PairwiseReranker(Reranker):
             else:
                 scores[i] += 0.5
                 scores[j] += 0.5
-        ranked_result, ranked_indices = zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
+        ranked_indices, _ = zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
+        ranked_result = [candidates[i] for i in ranked_indices]
         return ranked_result, ranked_indices
 
     def _bubble_sort(
