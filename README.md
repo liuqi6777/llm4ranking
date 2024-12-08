@@ -13,5 +13,10 @@ pip install -e .
 ## Evaluation Example
 
 ```bash
-python src/llm4ranking/evaluation/evaluator.py
+python -m llm4ranking.evaluation.evaluator \
+  --model_type hf \
+  --model_args '{"model": "meta-llama/Llama-3.1-8B-Instruct"}' \
+  --reranking_approach listwise-sw \
+  --datasets dl19 \
+  --model_fw_args '{"do_sample": false}'
 ```
