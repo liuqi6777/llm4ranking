@@ -2,8 +2,13 @@ from llm4ranking.model.lm.huggingface import HFLM
 from llm4ranking.model.lm.openai import OpenAILM
 
 
-def create_model(
+def load_model(
     model_type: str,
-    model_name_or_path: str = None,
+    model_args: dict,
 ):
-    pass
+    if model_type == "hf":
+        return HFLM(**model_args)
+    elif model_type == "openai":
+        raise NotImplementedError("OpenAI model is not implemented yet.")
+    else:
+        raise ValueError(f"Model type {model_type} is not supported.")
