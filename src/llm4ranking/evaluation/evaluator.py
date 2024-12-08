@@ -1,3 +1,5 @@
+import argparse
+import datetime
 import json
 import os
 import tempfile
@@ -113,12 +115,37 @@ def write_results(rerank_results, file_obj):
 
 
 if __name__ == "__main__":
-    simple_evaluate(
-        model_type="hf",
-        model_args={"model": "meta-llama/Llama-3.1-8B-Instruct"},
-        reranking_approach="listwise-sw",
-        datasets=["dl19"],
-        retriever="bm25",
-        topk=20,
-        model_fw_args={"do_sample": False},
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_type", type=str, required=True)
+    parser.add_argument("--model_args", type=json.loads, required=True)
+    parser.add_argument("--reranking_approach", type=str, required=True)
+    parser.add_argument("--datasets", nargs="+", required=True)
+    parser.add_argument("--retriever", type=str, default="bm25")
+    parser.add_argument("--topk", type=int, default=100)
+    parser.add_argument("--reranking_args", type=json.loads, default={})
+    parser.add_argument("--model_fw_args", type=json.loads, default={})
+    parser.add_argument("--prompt_template", type=str, default=None)
+    parser.add_argument("--num_passes", type=int, default=1)
+    parser.add_argument("--output_dir", type=str, default=None)
+    args = parser.parse_args()
+
+    results = simple_evaluate(
+        model_type=args.model_type,
+        model_args=args.model_args,
+        datasets=args.datasets,
+        reranking_approach=args.reranking_approach,
+        retriever=args.retriever,
+        topk=args.topk,
+        reranking_args=args.reranking_args,
+        model_fw_args=args.model_fw_args,
+        prompt_template=args.prompt_template,
+        num_passes=args.num_passes,
+        output_dir=args.output_dir
     )
+
+    if args.output_dir is None:
+        output_dir = os.path.join("results", "runs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+        os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, "results.json"), "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"Results saved to {output_dir}")
