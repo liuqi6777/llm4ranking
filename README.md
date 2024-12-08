@@ -6,7 +6,7 @@ Large language models for ranking.
 ```bash
 git clone git@github.com:liuqi6777/llm4ranking.git
 cd llm4ranking
-pip install . -e
+pip install -e .
 ```
 
 
