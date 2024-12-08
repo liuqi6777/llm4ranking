@@ -1,3 +1,12 @@
+# Project specific
+*.log
+logs/
+wandb/
+checkpoints/
+results/
+data/
+analysis/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
