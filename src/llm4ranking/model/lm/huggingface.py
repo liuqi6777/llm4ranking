@@ -78,6 +78,10 @@ class HFLM(LM):
         return 4096
 
     @property
+    def max_new_tokens(self):
+        return 256
+
+    @property
     def device(self):
         return self.model.device
 
@@ -86,17 +90,18 @@ class HFLM(LM):
         messages: dict[str, str],
         **kwargs
     ) -> str:
+        max_new_tokens = kwargs.pop("max_new_tokens", self.max_new_tokens)
         input_ids = self.tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
             return_tensors="pt",
             truncation=True,
-            max_length=self.max_length,
+            max_length=self.max_length - max_new_tokens,
         ).to(self.device)
         with torch.no_grad():
             outputs = self.model.generate(
                 input_ids=input_ids,
-                max_length=self.max_length,
+                max_new_tokens=max_new_tokens,
                 use_cache=True,
                 pad_token_id=self.tokenizer.eos_token_id,
                 **kwargs
