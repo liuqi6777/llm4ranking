@@ -1,6 +1,9 @@
 import argparse
+import collections
 import pytrec_eval
-from pyserini.search import get_qrels_file
+
+from datasets import load_dataset
+
 
 INDEX = {
     'bm25': {
@@ -45,26 +48,43 @@ INDEX = {
     },
 }
 
-TOPICS = {
+TOPICS_AND_QRELS = {
     'dl19': 'dl19-passage',
     'dl20': 'dl20-passage',
-    'covid': 'beir-v1.0.0-trec-covid-test',
-    'arguana': 'beir-v1.0.0-arguana-test',
-    'touche': 'beir-v1.0.0-webis-touche2020-test',
-    'news': 'beir-v1.0.0-trec-news-test',
-    'scifact': 'beir-v1.0.0-scifact-test',
-    'fiqa': 'beir-v1.0.0-fiqa-test',
-    'scidocs': 'beir-v1.0.0-scidocs-test',
-    'nfc': 'beir-v1.0.0-nfcorpus-test',
-    'quora': 'beir-v1.0.0-quora-test',
-    'dbpedia': 'beir-v1.0.0-dbpedia-entity-test',
-    'fever': 'beir-v1.0.0-fever-test',
-    'robust04': 'beir-v1.0.0-robust04-test',
-    'signal': 'beir-v1.0.0-signal1m-test',
-    'nq': 'beir-v1.0.0-nq-test',
-    'cfever': 'beir-v1.0.0-climate-fever-test',
-    'hotpotqa': 'beir-v1.0.0-hotpotqa-test',
+    'covid': 'beir-v1.0.0-trec-covid.test',
+    'arguana': 'beir-v1.0.0-arguana.test',
+    'touche': 'beir-v1.0.0-webis-touche2020.test',
+    'news': 'beir-v1.0.0-trec-news.test',
+    'scifact': 'beir-v1.0.0-scifact.test',
+    'fiqa': 'beir-v1.0.0-fiqa.test',
+    'scidocs': 'beir-v1.0.0-scidocs.test',
+    'nfc': 'beir-v1.0.0-nfcorpus.test',
+    'quora': 'beir-v1.0.0-quora.test',
+    'dbpedia': 'beir-v1.0.0-dbpedia-entity.test',
+    'fever': 'beir-v1.0.0-fever.test',
+    'robust04': 'beir-v1.0.0-robust04.test',
+    'signal': 'beir-v1.0.0-signal1m.test',
+    'nq': 'beir-v1.0.0-nq.test',
+    'cfever': 'beir-v1.0.0-climate-fever.test',
+    'hotpotqa': 'beir-v1.0.0-hotpotqa.test',
 }
+
+
+def get_qrels(dataset: str) -> str:
+    qrel = collections.defaultdict(dict)
+    f_qrel = load_dataset(
+        "liuqi6777/pyserini_retrieval_results",
+        data_files=f"topics_and_qrels/qrels.{TOPICS_AND_QRELS[dataset]}.txt",
+        split="train"
+    )["text"]
+
+    for line in f_qrel:
+        query_id, _, object_id, relevance = line.strip().split()
+
+        assert object_id not in qrel[query_id]
+        qrel[query_id][object_id] = int(relevance)
+
+    return qrel
 
 
 def compute_metrics(
@@ -110,8 +130,7 @@ def compute_metrics(
 def trec_eval(dataset, ranking, print_metrics=True):
     with open(ranking, 'r') as f_run:
         run = pytrec_eval.parse_run(f_run)
-    with open(get_qrels_file(dataset), 'r') as f_qrel:
-        qrels = pytrec_eval.parse_qrel(f_qrel)
+    qrels = get_qrels(dataset)
     all_metrics = compute_metrics(qrels, run, k_values=(1, 5, 10, 20, 100))
     if print_metrics:
         for metric, value in all_metrics.items():
@@ -125,4 +144,4 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='dl19')
     parser.add_argument('--ranking', type=str, required=True)
     args = parser.parse_args()
-    trec_eval(TOPICS[args.dataset], args.ranking)
+    trec_eval(TOPICS_AND_QRELS[args.dataset], args.ranking)
