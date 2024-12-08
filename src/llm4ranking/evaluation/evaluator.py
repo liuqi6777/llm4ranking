@@ -114,20 +114,32 @@ def write_results(rerank_results, file_obj):
             file_obj.write("\n")
 
 
+def parse_dict_args(args_string: str):
+    args = {}
+    for arg in args_string.split(","):
+        key, value = arg.strip().split("=")
+        try:
+            args[key] = eval(value)
+        except Exception:
+            args[key] = value
+    return args
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, required=True)
-    parser.add_argument("--model_args", type=json.loads, required=True)
+    parser.add_argument("--model_args", type=parse_dict_args, required=True)
     parser.add_argument("--reranking_approach", type=str, required=True)
     parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--retriever", type=str, default="bm25")
     parser.add_argument("--topk", type=int, default=100)
-    parser.add_argument("--reranking_args", type=json.loads, default={})
-    parser.add_argument("--model_fw_args", type=json.loads, default={})
+    parser.add_argument("--reranking_args", type=parse_dict_args, default={})
+    parser.add_argument("--model_fw_args", type=parse_dict_args, default={})
     parser.add_argument("--prompt_template", type=str, default=None)
     parser.add_argument("--num_passes", type=int, default=1)
     parser.add_argument("--output_dir", type=str, default=None)
     args = parser.parse_args()
+    print(args)
 
     results = simple_evaluate(
         model_type=args.model_type,
