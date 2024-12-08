@@ -7,7 +7,7 @@ from datasets import load_dataset
 
 from llm4ranking.ranker import *
 from llm4ranking.model import *
-from llm4ranking.evaluation.trec_eval import trec_eval, TOPICS
+from llm4ranking.evaluation.trec_eval import trec_eval
 
 
 RERANKING_APPROACHES = {
@@ -93,11 +93,11 @@ def simple_evaluate(
                 )
                 with open(output_file, "w") as f:
                     write_results(rerank_results, f)
-                    metrics = trec_eval(TOPICS[dataset], f.name)
+                    metrics = trec_eval(dataset, f.name)
             else:
                 with tempfile.NamedTemporaryFile("w", delete=False) as f:
                     write_results(rerank_results, f)
-                    metrics = trec_eval(TOPICS[dataset], f.name)
+                    metrics = trec_eval(dataset, f.name)
 
             results["metrics"][dataset]["pass" + str(pass_)] = metrics
 
