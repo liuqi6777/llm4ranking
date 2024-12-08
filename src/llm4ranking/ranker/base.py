@@ -25,7 +25,7 @@ class PointwiseReranker(Reranker):
         ranking_func: Callable[[str, str], float],
         **kwargs: dict[str, Any],
     ) -> tuple[list[str], list[int]]:
-        ranked_indices, ranked_result = zip(*sorted(enumerate(candidates), key=lambda x: ranking_func(query, x[1]), reverse=True))
+        ranked_indices, ranked_result = zip(*sorted(enumerate(candidates), key=lambda x: ranking_func(query, x[1], **kwargs), reverse=True))
         return ranked_result, ranked_indices
 
 
@@ -35,11 +35,11 @@ class PairwiseReranker(Reranker):
         self,
         query: str,
         candidates: list[str],
-        method: str,
         ranking_func: Callable[[str, str, str], int],
+        sorting_method: str,
         **kwargs: dict[str, Any],
     ):
-        return getattr(self, f"_{method}")(query, candidates, ranking_func, **kwargs)
+        return getattr(self, f"_{sorting_method}")(query, candidates, ranking_func, **kwargs)
 
     def _all_pair(
         self,
@@ -51,7 +51,7 @@ class PairwiseReranker(Reranker):
         doc_pairs = list(combinations(range(len(candidates)), 2))
         scores = [0] * len(candidates)
         for i, j in doc_pairs:
-            res = ranking_func(query, candidates[i], candidates[j])
+            res = ranking_func(query, candidates[i], candidates[j], **kwargs)
             if res > 0:
                 scores[i] += 1
             elif res < 0:
@@ -76,7 +76,7 @@ class PairwiseReranker(Reranker):
         for i in range(min(topk, len(candidates))):
             changed = False
             for j in range(last_end, i, -1):
-                if ranking_func(query, candidates[j], candidates[j - 1]) > 0:
+                if ranking_func(query, candidates[j], candidates[j - 1], **kwargs) > 0:
                     candidates[j - 1], candidates[j] = candidates[j], candidates[j - 1]
                     ranked_indices[j - 1], ranked_indices[j] = ranked_indices[j], ranked_indices[j - 1]
                     if not changed:
@@ -104,9 +104,9 @@ class PairwiseReranker(Reranker):
             largest = i
             l = 2 * i + 1
             r = 2 * i + 2
-            if l < n and ranking_func(query, candidates[l], candidates[i]) > 0:
+            if l < n and ranking_func(query, candidates[l], candidates[i], **kwargs) > 0:
                 largest = l
-            if r < n and ranking_func(query, candidates[r], candidates[largest]) > 0:
+            if r < n and ranking_func(query, candidates[r], candidates[largest], **kwargs) > 0:
                 largest = r
             # If root is not largest, swap with largest and continue heapifying
             if largest != i:
@@ -149,7 +149,7 @@ class ListwiseSilidingWindowReranker(Reranker):
         while end_pos > rank_start and start_pos + step != rank_start:
             start_pos = max(start_pos, rank_start)
             # range from 0 to window_size
-            permutation = ranking_func(query, ranked_result[start_pos:end_pos])
+            permutation = ranking_func(query, ranked_result[start_pos:end_pos], **kwargs)
 
             # receive permutation
             cut_range = copy.deepcopy(ranked_result[start_pos:end_pos])
