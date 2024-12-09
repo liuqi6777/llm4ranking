@@ -21,6 +21,7 @@ def train():
         attn_implementation=training_args.attn_implementation,
         torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
     )
+    model.config.use_cache = False
 
     # Load Lora
     if lora_args.lora_enable:
@@ -68,8 +69,8 @@ def train():
 
     # Save model
     model.config.use_cache = True
-    if training_args.local_rank == 0:
-        trainer.save_model()
+    torch.cuda.synchronize()
+    trainer.save_model()
 
 
 if __name__ == "__main__":
