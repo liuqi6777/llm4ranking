@@ -137,8 +137,12 @@ class ListwiseSilidingWindowReranker(Reranker):
         rank_end: int = None,
         window_size: Optional[int] = None,
         step: int = 10,
+        truncate_length: Optional[int] = None,  
         **kwargs: dict[str, Any],
     ) -> tuple[list[str], list[int]]:
+
+        if truncate_length:
+            candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
 
         ranked_result = copy.deepcopy(candidates)
         ranked_indices = list(range(len(candidates)))
