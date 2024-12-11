@@ -95,9 +95,9 @@ def simple_evaluate(
                 )
                 with open(output_file, "w") as f:
                     write_results(rerank_results, f)
-                    metrics = trec_eval(dataset, f.name)
+                metrics = trec_eval(dataset, output_file)
             else:
-                with tempfile.NamedTemporaryFile("w", delete=False) as f:
+                with tempfile.NamedTemporaryFile("w") as f:
                     write_results(rerank_results, f)
                     metrics = trec_eval(dataset, f.name)
 
@@ -141,6 +141,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
+    if args.output_dir is None:
+        output_dir = os.path.join("results", "runs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+        os.makedirs(output_dir, exist_ok=True)
+    else:
+        output_dir = args.output_dir
+
+    with open(os.path.join(output_dir, "args.json"), "w") as f:
+        json.dump(vars(args), f, indent=4)
+
     results = simple_evaluate(
         model_type=args.model_type,
         model_args=args.model_args,
@@ -152,12 +161,9 @@ if __name__ == "__main__":
         model_fw_args=args.model_fw_args,
         prompt_template=args.prompt_template,
         num_passes=args.num_passes,
-        output_dir=args.output_dir
+        output_dir=output_dir
     )
 
-    if args.output_dir is None:
-        output_dir = os.path.join("results", "runs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-        os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, "results.json"), "w") as f:
         json.dump(results, f, indent=4)
     print(f"Results saved to {output_dir}")
