@@ -91,7 +91,7 @@ def simple_evaluate(
             if output_dir is not None:
                 output_file = os.path.join(
                     output_dir,
-                    f"eval_{dataset}_{ranking_func.model_name.split('/')[-1]}_top{topk}_pass{pass_}.txt"
+                    f"eval_{dataset}_top{topk}_pass{pass_}.txt"
                 )
                 with open(output_file, "w") as f:
                     write_results(rerank_results, f)
