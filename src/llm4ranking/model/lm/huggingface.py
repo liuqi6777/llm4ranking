@@ -113,7 +113,21 @@ class HFLM(LM):
         messages: dict[str, str],
         **kwargs
     ) -> float:
-        pass
+        input_ids = self.tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.max_length,
+            continue_final_message=True,  # this will remove the last eos token
+        ).to(self.device)
+        labels = self._mask_labels(messages, input_ids.clone())[:, 1:]
+        with torch.no_grad():
+            logits = self.model(input_ids, **kwargs).logits[:, :-1, :].contiguous().float()
+            loglikelihood = -torch.nn.functional.cross_entropy(
+                logits.view(-1, logits.size(-1)),
+                labels.view(-1),
+            ).float().item()
+        return loglikelihood
 
     def _mask_labels(
         self, 
@@ -122,7 +136,8 @@ class HFLM(LM):
     ) -> torch.Tensor:
         for message_idx, message in enumerate(messages):
             if message["role"] != "assistant":
-                message_start_idx = self._get_messages_length(messages[:message_idx]) if message_idx > 0 else 0
+                message_start_idx = self._get_messages_length(messages[:message_idx]) \
+                    if message_idx > 0 else 0
                 message_end_idx = self._get_messages_length(messages[:message_idx+1])         
                 labels[:, message_start_idx:message_end_idx] = -100
                 if message_end_idx >= self.tokenizer.model_max_length:
@@ -130,5 +145,7 @@ class HFLM(LM):
         return labels
 
     def _get_messages_length(self, messages: list[dict[str, str]]) -> int:
-        return self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt", truncation=True).shape[1]
-
+        return self.tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True,
+            return_tensors="pt", truncation=True
+        ).shape[1]
