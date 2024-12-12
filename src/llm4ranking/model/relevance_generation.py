@@ -1,10 +1,15 @@
-import re
 from jinja2 import Template
 from typing import Optional
 
 from llm4ranking.model.lm import load_model
 
-PROMPT_TEMPLATE = ""
+
+PROMPT_TEMPLATE = """Document: {{ doc }}
+
+Query: {{ query }}
+
+Does the document answer the query?
+"""
 
 
 class RelevanceGeneration:
@@ -23,11 +28,13 @@ class RelevanceGeneration:
         query: str,
         doc: str,
     ) -> str:
-        input_context = f"Document: {doc}\nQuery:{query}\nIs the document relevant to the query? Give only the result (yes / no), do not give any explanation."
-        messages = [{"role": "user", "content": input_context}, {"role": "assistant", "content": "yes"}]
+        messages = [
+            {"role": "user", "content": self.template.render(doc=doc, query=query)},
+            {"role": "assistant", "content": " Yes"}
+        ]
         return messages
 
     def __call__(self, query: str, doc: str) -> float:
         messages = self.create_messages(query, doc)
-        logits = self.lm.loglikelihood(messages)
-        return logits
+        score = self.lm.loglikelihood(messages)
+        return score
