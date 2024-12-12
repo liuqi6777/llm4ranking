@@ -1,4 +1,5 @@
 import copy
+import random
 from abc import ABC, abstractmethod
 from typing import Optional, Callable, Any
 from itertools import combinations
@@ -164,4 +165,54 @@ class ListwiseSilidingWindowReranker(Reranker):
 
             start_pos, end_pos = start_pos - step, end_pos - step
 
+        return ranked_result, ranked_indices
+
+
+class TournamentReranker(Reranker):
+    def rerank(
+        self,
+        query: str,
+        candidates: list[str],
+        ranking_func: Callable[[str, str], float],
+        tuornament_times: int = 1,
+        group_sizes: tuple[int] = (20, 10, 20, 10, 5),
+        promotion_sizes: tuple[int] = (10, 4, 10, 5, 1),
+        truncate_length: Optional[int] = None,  
+        **kwargs: dict[str, Any],
+    ) -> tuple[list[str], list[int]]:
+        assert len(group_sizes) == len(promotion_sizes)
+
+        if truncate_length:
+            candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
+
+        doc_scores = [0] * len(candidates)
+
+        # construct a random order of documents for the first stage
+        stage_ids = list(range(len(candidates)))
+
+        for _ in range(tuornament_times):
+            for group_size, promotion_size in zip(group_sizes, promotion_sizes):
+                assert group_size > promotion_size and len(stage_ids) % group_size == 0
+
+                num_groups = len(stage_ids) // group_size
+                groups = [stage_ids[i::num_groups] for i in range(num_groups)]
+
+                stage_ids = []
+                for gid in range(len(groups)):
+
+                    group_candidate_ids = groups[gid]
+                    random.shuffle(group_candidate_ids)
+                    group_candidates = [candidates[i] for i in group_candidate_ids]
+
+                    top_indices = ranking_func(query, group_candidates, promotion_size, **kwargs)  # select top M form N candidates
+                    top_ids = [group_candidate_ids[i] for i in top_indices]  # convert to global index
+                    stage_ids.extend(top_ids)
+
+                    for doc_id in top_ids:
+                        doc_scores[doc_id] += 1
+
+                stage_ids = sorted(stage_ids, key=lambda x: doc_scores[x], reverse=True)
+
+        ranked_indices, _ = zip(*sorted(enumerate(doc_scores), key=lambda x: x[1], reverse=True))
+        ranked_result = [candidates[i] for i in ranked_indices]
         return ranked_result, ranked_indices

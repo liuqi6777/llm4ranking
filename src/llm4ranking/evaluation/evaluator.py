@@ -17,6 +17,7 @@ RERANKING_APPROACHES = {
     "pointwise-rg": (PointwiseReranker, RelevanceGeneration),
     "pointwise-qg": (PointwiseReranker, QueryGeneration),
     "pairwise": (PairwiseReranker, PairwiseComparison),
+    "tournament": (TournamentReranker, Selection),
 }
 
 
