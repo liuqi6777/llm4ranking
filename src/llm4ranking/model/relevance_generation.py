@@ -1,10 +1,7 @@
-from jinja2 import Template
-from typing import Optional
-
-from llm4ranking.model.lm import load_model
+from llm4ranking.model.base import BaseRankingModel
 
 
-PROMPT_TEMPLATE = """Document: {{ doc }}
+DEFAULT_PROMPT_TEMPLATE = """Document: {{ doc }}
 
 Query: {{ query }}
 
@@ -12,16 +9,9 @@ Does the document answer the query?
 """
 
 
-class RelevanceGeneration:
+class RelevanceGeneration(BaseRankingModel):
 
-    def __init__(
-        self,
-        model_type: str,
-        model_args: dict,
-        prompt_template: Optional[str] = None,
-    ):
-        self.lm = load_model(model_type, model_args)
-        self.template = Template(prompt_template or PROMPT_TEMPLATE)
+    DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
     def create_messages(
         self,
@@ -29,7 +19,7 @@ class RelevanceGeneration:
         doc: str,
     ) -> str:
         messages = [
-            {"role": "user", "content": self.template.render(doc=doc, query=query)},
+            {"role": "user", "content": self.prompt_template.render(doc=doc, query=query)},
             {"role": "assistant", "content": " Yes"}
         ]
         return messages

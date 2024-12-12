@@ -1,11 +1,9 @@
 import re
-from jinja2 import Template
-from typing import Optional
 
-from llm4ranking.model.lm import load_model
+from llm4ranking.model.base import BaseRankingModel
 
 
-PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} passages, each indicated by a numerical identifier []. Rank the passages based on their relevance to the search query: {{ query }}.
+DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} passages, each indicated by a numerical identifier []. Rank the passages based on their relevance to the search query: {{ query }}.
 {% for content in candidates %}
 [{{ loop.index }}] {{content}}
 {% endfor %}
@@ -14,16 +12,9 @@ Rank the {{ candidates|length }} passages above based on their relevance to the 
 """
 
 
-class ListwiseGeneration:
+class ListwiseGeneration(BaseRankingModel):
 
-    def __init__(
-        self,
-        model_type: str,
-        model_args: dict,
-        prompt_template: Optional[str] = None,
-    ):
-        self.lm = load_model(model_type, model_args)
-        self.template = Template(prompt_template or PROMPT_TEMPLATE)
+    DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
     def __call__(self, query: str, candidates: list[str], **kwargs) -> dict[str]:
         messages = self.create_messages(query, candidates)
@@ -36,7 +27,9 @@ class ListwiseGeneration:
         query: str,
         candidates: list[str],
     ) -> str:
-        messages = [{"role": "user", "content": self.template.render(query=query, candidates=candidates)}]
+        messages = [
+            {"role": "user", "content": self.prompt_template.render(query=query, candidates=candidates)}
+        ]
         return messages
 
     def parse_output(self, output: str, n: int) -> list[int]:

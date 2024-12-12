@@ -1,11 +1,9 @@
 import re
-from jinja2 import Template
-from typing import Optional
 
-from llm4ranking.model.lm import load_model
+from llm4ranking.model.base import BaseRankingModel
 
 
-PROMPT_TEMPLATE = """I will provide you with the given query and {{ candidates|length }} documents, each indicated by a numerical identifier [].
+DEFAULT_PROMPT_TEMPLATE = """I will provide you with the given query and {{ candidates|length }} documents, each indicated by a numerical identifier [].
 
 Consider the content of all the documents comprehensively and select the {{ num_selection }} documents that are most relevant to the given query: {{ query }}.
 
@@ -19,16 +17,9 @@ Output the {{ num_selection }} unique documents that are most relevant to the Qu
 """
 
 
-class Selection:
+class Selection(BaseRankingModel):
 
-    def __init__(
-        self,
-        model_type: str,
-        model_args: dict,
-        prompt_template: Optional[str] = None,
-    ):
-        self.lm = load_model(model_type, model_args)
-        self.template = Template(prompt_template or PROMPT_TEMPLATE)
+    DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
     def __call__(self, query: str, candidates: list[str], num_selection: int, **kwargs) -> dict[str]:
         messages = self.create_messages(query, candidates, num_selection)
@@ -42,7 +33,10 @@ class Selection:
         candidates: list[str],
         num_selection: int,
     ) -> str:
-        messages = [{"role": "user", "content": self.template.render(query=query, candidates=candidates, num_selection=num_selection)}]
+        messages = [
+            {"role": "user", "content": self.prompt_template.render(
+                query=query, candidates=candidates, num_selection=num_selection)}
+        ]
         return messages
 
     def parse_output(self, output: str, n: int) -> list[int]:
