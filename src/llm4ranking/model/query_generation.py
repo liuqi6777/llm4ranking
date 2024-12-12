@@ -1,10 +1,14 @@
-import re
 from jinja2 import Template
 from typing import Optional
 
 from llm4ranking.model.lm import load_model
 
-PROMPT_TEMPLATE = ""
+
+PROMPT_TEMPLATE = """Please write a question based on this document.
+
+Document: {{ doc }}
+
+Query:"""
 
 
 class QueryGeneration:
@@ -23,8 +27,7 @@ class QueryGeneration:
         query: str,
         doc: str,
     ) -> str:
-        input_context = f"Passage: {doc}\nPlease write a question based on this passage."
-        messages = [{"role": "user", "content": input_context}, {"role": "assistant", "content": query}]
+        messages = [{"role": "user", "content": self.template.render(doc=doc)}, {"role": "assistant", "content": query}]
         return messages
 
     def __call__(self, query: str, doc: str) -> float:

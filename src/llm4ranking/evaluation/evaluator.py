@@ -15,6 +15,7 @@ from llm4ranking.evaluation.trec_eval import trec_eval
 RERANKING_APPROACHES = {
     "listwise-sw": (ListwiseSilidingWindowReranker, ListwiseGeneration),
     "pointwise-rg": (PointwiseReranker, RelevanceGeneration),
+    "pointwise-qg": (PointwiseReranker, QueryGeneration),
     "pairwise": (PairwiseReranker, PairwiseComparison),
 }
 
