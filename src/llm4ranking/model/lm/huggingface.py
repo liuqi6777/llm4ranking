@@ -47,7 +47,7 @@ class HFLM(LM):
                     use_fast=use_fast_tokenizer,
                     **kwargs,
                 )
-            elif isinstance(tokenizer, transformers.PreTrainedTokenizer):
+            elif isinstance(tokenizer, (transformers.PreTrainedTokenizer, transformers.PreTrainedTokenizerFast)):
                 self.tokenizer = tokenizer
             else:
                 raise ValueError(f"Tokenizer must be a string or a PreTrainedTokenizer, not {type(tokenizer)}")
