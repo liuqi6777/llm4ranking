@@ -144,4 +144,4 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='dl19')
     parser.add_argument('--ranking', type=str, required=True)
     args = parser.parse_args()
-    trec_eval(TOPICS_AND_QRELS[args.dataset], args.ranking)
+    trec_eval(args.dataset, args.ranking)

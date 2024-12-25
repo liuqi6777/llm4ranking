@@ -55,26 +55,12 @@ def simple_evaluate(
 
     results = {}
 
-    results["args"] = {
-        "model_type": model_type,
-        "model_args": model_args,
-        "datasets": datasets,
-        "reranking_approach": reranking_approach,
-        "retriever": retriever,
-        "topk": topk,
-        "reranking_args": reranking_args,
-        "model_fw_args": model_fw_args,
-        "prompt_template": prompt_template,
-        "num_passes": num_passes,
-    }
-    results["metrics"] = {}
-
     if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
 
     for dataset in datasets:
         data = load_dataset("liuqi6777/pyserini_retrieval_results", data_files=f"{retriever}/{dataset}_top{topk}.jsonl", split="train")
-        results["metrics"][dataset] = {}
+        results[dataset] = {}
 
         prev_results = data
         for pass_ in range(num_passes):
@@ -103,7 +89,7 @@ def simple_evaluate(
                     write_results(rerank_results, f)
                     metrics = trec_eval(dataset, f.name)
 
-            results["metrics"][dataset]["pass" + str(pass_)] = metrics
+            results[dataset]["pass" + str(pass_)] = metrics
 
     return results
 
@@ -149,7 +135,7 @@ if __name__ == "__main__":
     else:
         output_dir = args.output_dir
 
-    with open(os.path.join(output_dir, "args.json"), "w") as f:
+    with open(os.path.join(output_dir, "cli_args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
     results = simple_evaluate(
