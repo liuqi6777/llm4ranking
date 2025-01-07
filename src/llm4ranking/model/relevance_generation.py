@@ -1,3 +1,6 @@
+from typing import Union
+
+from llm4ranking.model.lm.base import LMOuput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -24,7 +27,9 @@ class RelevanceGeneration(BaseRankingModel):
         ]
         return messages
 
-    def __call__(self, query: str, doc: str) -> float:
+    def __call__(self, query: str, doc: str, return_lm_outputs: bool = False) -> Union[float, tuple[float, LMOuput]]:
         messages = self.create_messages(query, doc)
-        score = self.lm.loglikelihood(messages)
-        return score
+        lm_outputs = self.lm.loglikelihood(messages, return_num_tokens=True)
+        if return_lm_outputs:
+            return lm_outputs.loglikelihood, lm_outputs
+        return lm_outputs.loglikelihood

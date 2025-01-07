@@ -1,4 +1,14 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Optional, Union
+
+
+@dataclass
+class LMOuput:
+    text: str
+    loglikelihood: Optional[float] = None
+    num_processed_tokens: Optional[int] = None
+    num_generated_tokens: Optional[int] = None
 
 
 class LM(ABC):
@@ -6,9 +16,9 @@ class LM(ABC):
         pass
 
     @abstractmethod
-    def generate(self, messages: dict[str, str], **kwargs) -> str:
+    def generate(self, messages: dict[str, str], **kwargs) -> Union[str, LMOuput]:
         pass
 
     @abstractmethod
-    def loglikelihood(self, messages: dict[str, str], **kwargs) -> float:
+    def loglikelihood(self, messages: dict[str, str], **kwargs) -> Union[float, LMOuput]:
         pass

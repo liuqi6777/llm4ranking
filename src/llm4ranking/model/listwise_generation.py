@@ -1,5 +1,7 @@
 import re
+from typing import Union
 
+from llm4ranking.model.lm.base import LMOuput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -16,10 +18,18 @@ class ListwiseGeneration(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
-    def __call__(self, query: str, candidates: list[str], **kwargs) -> dict[str]:
+    def __call__(
+        self,
+        query: str,
+        candidates: list[str],
+        return_lm_outputs: bool = False,
+        **kwargs
+    ) -> Union[list[int], tuple[list[int], LMOuput]]:
         messages = self.create_messages(query, candidates)
-        outputs = self.lm.generate(messages, **kwargs)
-        permutation = self.parse_output(outputs, len(candidates))
+        lm_outputs = self.lm.generate(messages, return_num_tokens=True, **kwargs)
+        permutation = self.parse_output(lm_outputs.text, len(candidates))
+        if return_lm_outputs:
+            return permutation, lm_outputs
         return permutation
 
     def create_messages(

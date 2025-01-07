@@ -2,7 +2,7 @@ import torch
 import transformers
 from typing import Optional, Union
 
-from llm4ranking.model.lm.base import LM
+from llm4ranking.model.lm.base import LM, LMOuput
 
 
 class HFLM(LM):
@@ -88,8 +88,9 @@ class HFLM(LM):
     def generate(
         self,
         messages: dict[str, str],
+        return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> str:
+    ) -> Union[str, LMOuput]:
         max_new_tokens = kwargs.pop("max_new_tokens", self.max_new_tokens)
         input_ids = self.tokenizer.apply_chat_template(
             messages,
@@ -106,13 +107,29 @@ class HFLM(LM):
                 pad_token_id=self.tokenizer.eos_token_id,
                 **kwargs
             )[0, input_ids.shape[-1]:].cpu()
-        return self.tokenizer.decode(outputs, skip_special_tokens=True)
+        output_text = self.tokenizer.decode(outputs, skip_special_tokens=True)
+
+        if return_num_tokens:
+            num_processed_tokens = input_ids.shape[-1]
+            num_generated_tokens = outputs.shape[-1]
+
+            return LMOuput(
+                text=output_text,
+                num_processed_tokens=num_processed_tokens,
+                num_generated_tokens=num_generated_tokens,
+            )
+
+        return output_text
+        
 
     def loglikelihood(
         self,
         messages: dict[str, str],
+        return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> float:
+    ) -> Union[float, LMOuput]:
+        assert messages[-1]["role"] == "assistant", "Last message must be from the assistant"
+        assert len([m for m in messages if m["role"] == "assistant"]) == 1, "Only one assistant message allowed"
         input_ids = self.tokenizer.apply_chat_template(
             messages,
             return_tensors="pt",
@@ -127,6 +144,16 @@ class HFLM(LM):
                 logits.view(-1, logits.size(-1)),
                 labels.view(-1),
             ).float().item()
+
+        if return_num_tokens:
+            num_processed_tokens = input_ids.shape[-1]
+
+            return LMOuput(
+                text=messages[-1]["content"],
+                loglikelihood=loglikelihood,
+                num_processed_tokens=num_processed_tokens,
+            )
+
         return loglikelihood
 
     def _mask_labels(

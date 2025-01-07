@@ -1,5 +1,7 @@
 import re
+from typing import Union
 
+from llm4ranking.model.lm.base import LMOuput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -21,10 +23,19 @@ class Selection(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
-    def __call__(self, query: str, candidates: list[str], num_selection: int, **kwargs) -> dict[str]:
+    def __call__(
+        self,
+        query: str,
+        candidates: list[str],
+        num_selection: int,
+        return_lm_outputs: bool = False,
+        **kwargs
+    ) -> Union[list[int], tuple[list[int], LMOuput]]:
         messages = self.create_messages(query, candidates, num_selection)
-        outputs = self.lm.generate(messages, **kwargs)
-        seleted_idx = self.parse_output(outputs, num_selection)
+        lm_outputs = self.lm.generate(messages, **kwargs)
+        seleted_idx = self.parse_output(lm_outputs.text, num_selection)
+        if return_lm_outputs:
+            return seleted_idx, lm_outputs
         return seleted_idx
 
     def create_messages(
