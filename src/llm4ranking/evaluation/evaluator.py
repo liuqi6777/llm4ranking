@@ -131,9 +131,9 @@ if __name__ == "__main__":
 
     if args.output_dir is None:
         output_dir = os.path.join("results", "runs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-        os.makedirs(output_dir, exist_ok=True)
     else:
         output_dir = args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
 
     with open(os.path.join(output_dir, "cli_args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
