@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import tempfile
+from dataclasses import asdict
 from functools import partial
 from tqdm import tqdm
 from datasets import load_dataset
@@ -65,15 +66,18 @@ def simple_evaluate(
         prev_results = data
         for pass_ in range(num_passes):
             rerank_results = []
+            all_records = []
             for i in tqdm(range(len(prev_results))):
-                _, rerank_indices = rerank(
+                _, rerank_indices, record = rerank(
                     query=prev_results[i]["query"],
-                    candidates=[x["content"] for x in prev_results[i]["hits"]]
+                    candidates=[x["content"] for x in prev_results[i]["hits"]],
+                    return_record=True,
                 )
                 rerank_results.append({
                     "query": prev_results[i]["query"],
                     "hits": [prev_results[i]["hits"][j] for j in rerank_indices]
                 })
+                all_records.append(asdict(record))
             prev_results = rerank_results
 
             if output_dir is not None:
@@ -89,7 +93,9 @@ def simple_evaluate(
                     write_results(rerank_results, f)
                     metrics = trec_eval(dataset, f.name)
 
-            results[dataset]["pass" + str(pass_)] = metrics
+            results[dataset]["pass" + str(pass_)] = {}
+            results[dataset]["pass" + str(pass_)]["metrics"] = metrics
+            results[dataset]["pass" + str(pass_)]["records"] = all_records
 
     return results
 
