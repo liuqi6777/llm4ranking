@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 class RankingRecord:
 
     query: str
-    candidates: list[str]
+    candidates: Optional[list[str]] = None
 
     prompt_template: Optional[str] = None
     num_processed_docs: Optional[int] = None
@@ -50,7 +50,6 @@ class PointwiseReranker(Reranker):
         if return_record:
             record = RankingRecord(
                 query=query,
-                candidates=candidates,
                 num_processed_docs=len(candidates),
                 num_processed_tokens=0,
                 prompt_template=ranking_func._prompt_template,
@@ -104,7 +103,6 @@ class PairwiseReranker(Reranker):
         if return_record:
             record = RankingRecord(
                 query=query,
-                candidates=candidates,
                 num_processed_docs=len(candidates),
                 num_processed_tokens=0,
                 num_generated_tokens=0,
@@ -155,7 +153,6 @@ class PairwiseReranker(Reranker):
         if return_record:
             record = RankingRecord(
                 query=query,
-                candidates=candidates,
                 num_processed_docs=len(candidates),
                 num_processed_tokens=0,
                 num_generated_tokens=0,
@@ -208,7 +205,6 @@ class PairwiseReranker(Reranker):
         if return_record:
             record = RankingRecord(
                 query=query,
-                candidates=candidates,
                 num_processed_docs=0,
                 num_processed_tokens=0,
                 num_generated_tokens=0,
@@ -279,7 +275,6 @@ class ListwiseSilidingWindowReranker(Reranker):
         if return_record:
             record = RankingRecord(
                 query=query,
-                candidates=candidates,
                 num_processed_docs=0,
                 num_processed_tokens=0,
                 num_generated_tokens=0,
@@ -343,7 +338,6 @@ class TournamentReranker(Reranker):
         if return_record:
             record = RankingRecord(
                 query=query,
-                candidates=candidates,
                 num_processed_docs=0,
                 num_processed_tokens=0,
                 num_generated_tokens=0,
