@@ -32,7 +32,7 @@ class Selection(BaseRankingModel):
         **kwargs
     ) -> Union[list[int], tuple[list[int], LMOuput]]:
         messages = self.create_messages(query, candidates, num_selection)
-        lm_outputs = self.lm.generate(messages, **kwargs)
+        lm_outputs = self.lm.generate(messages, return_num_tokens=True, **kwargs)
         seleted_idx = self.parse_output(lm_outputs.text, num_selection)
         if return_lm_outputs:
             return seleted_idx, lm_outputs
