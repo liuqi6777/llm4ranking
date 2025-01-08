@@ -44,6 +44,7 @@ class PointwiseReranker(Reranker):
         query: str,
         candidates: list[str],
         ranking_func: Callable[[str, str], float],
+        truncate_length: Optional[int] = None,
         return_record: bool = False,
         **kwargs: dict[str, Any],
     ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
@@ -55,6 +56,9 @@ class PointwiseReranker(Reranker):
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
+
+        if truncate_length:
+            candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
 
         loglikelihoods = []
         for candidate in candidates:
