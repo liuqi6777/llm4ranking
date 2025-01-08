@@ -66,8 +66,11 @@ class PointwiseReranker(Reranker):
                 loglikelihood = ranking_func(query, candidate, **kwargs)
             loglikelihoods.append(loglikelihood)
 
-        ranked_indices, _ = zip(*sorted(enumerate(loglikelihoods), key=lambda x: x[1], reverse=True))
-        ranked_result = [candidates[i] for i in ranked_indices]
+        if len(loglikelihoods) == 0:
+            ranked_indices, ranked_result = [], []
+        else:
+            ranked_indices, _ = zip(*sorted(enumerate(loglikelihoods), key=lambda x: x[1], reverse=True))
+            ranked_result = [candidates[i] for i in ranked_indices]
 
         if return_record:
             record.latency = time.time() - t
