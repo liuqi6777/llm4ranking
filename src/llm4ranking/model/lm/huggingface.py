@@ -120,7 +120,6 @@ class HFLM(LM):
             )
 
         return output_text
-        
 
     def loglikelihood(
         self,
