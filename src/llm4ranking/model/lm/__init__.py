@@ -9,6 +9,6 @@ def load_model(
     if model_type == "hf":
         return HFLM(**model_args)
     elif model_type == "openai":
-        raise NotImplementedError("OpenAI model is not implemented yet.")
+        raise OpenAILM(**model_args)
     else:
         raise ValueError(f"Model type {model_type} is not supported.")
