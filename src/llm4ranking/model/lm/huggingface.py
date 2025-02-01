@@ -11,7 +11,7 @@ class HFLM(LM):
         model: Union[str, transformers.PreTrainedModel],
         tokenizer: Optional[Union[str, transformers.PreTrainedTokenizer, transformers.PreTrainedTokenizerFast]] = None,
         revision: Optional[str] = "main",
-        truncation: Optional[bool] = False,
+        truncation: Optional[bool] = True,
         max_length: Optional[int] = None,
         device_map: Optional[str] = "auto",
         dtype: Optional[Union[str, torch.dtype]] = "auto",
@@ -96,7 +96,7 @@ class HFLM(LM):
             messages,
             add_generation_prompt=True,
             return_tensors="pt",
-            truncation=True,
+            truncation=self._truncation,
             max_length=self.max_length - max_new_tokens,
         ).to(self.device)
         with torch.no_grad():
@@ -133,7 +133,7 @@ class HFLM(LM):
         input_ids = self.tokenizer.apply_chat_template(
             messages,
             return_tensors="pt",
-            truncation=True,
+            truncation=self._truncation,
             max_length=self.max_length,
             continue_final_message=True,  # this will remove the last eos token
         ).to(self.device)
@@ -174,5 +174,5 @@ class HFLM(LM):
     def _get_messages_length(self, messages: list[dict[str, str]]) -> int:
         return self.tokenizer.apply_chat_template(
             messages, add_generation_prompt=True,
-            return_tensors="pt", truncation=True
+            return_tensors="pt", truncation=self._truncation,
         ).shape[1]
