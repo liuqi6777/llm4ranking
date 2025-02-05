@@ -49,7 +49,7 @@ class OpenAIClient(LM):
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            max_completion_tokens=kwargs.pop("max_completion_tokens", self.max_new_tokens)
+            max_completion_tokens=kwargs.pop("max_completion_tokens", self.max_new_tokens),
             **kwargs
         )
 
