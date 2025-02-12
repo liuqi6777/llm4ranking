@@ -17,21 +17,71 @@ class HFLM(LM):
         dtype: Optional[Union[str, torch.dtype]] = "auto",
         trust_remote_code: Optional[bool] = True,
         use_fast_tokenizer: Optional[bool] = False,
-        # TODO: PEFT, delta weights and quantization options
+        # PEFT options
+        peft_config: Optional[dict] = None,
+        # Delta weights options
+        delta_weights_path: Optional[str] = None,
+        # Quantization options
+        load_in_8bit: bool = False,
+        load_in_4bit: bool = False,
+        quantization_config: Optional[dict] = None,
         **kwargs,
     ):
+        """Initialize the HFLM model.
+
+        Args:
+            model: The model name or path, or a PreTrainedModel instance
+            tokenizer: The tokenizer name or path, or a PreTrainedTokenizer instance
+            revision: The revision of the model to use
+            truncation: Whether to truncate the input
+            max_length: The maximum length of the input
+            device_map: The device map to use
+            dtype: The data type to use
+            trust_remote_code: Whether to trust the remote code
+            use_fast_tokenizer: Whether to use a fast tokenizer
+            peft_config: The PEFT configuration to use
+            delta_weights_path: The path to the delta weights to use
+            quantization_config: The quantization configuration to use
+            load_in_8bit: Whether to load the model in 8-bit
+            load_in_4bit: Whether to load the model in 4-bit
+            **kwargs: Additional keyword arguments
+        """
         super().__init__()
 
         # Load model
         if isinstance(model, str):
+            # Prepare quantization config if specified
+            if quantization_config or load_in_8bit or load_in_4bit:
+                if load_in_8bit and load_in_4bit:
+                    raise ValueError("Cannot load model in both 8-bit and 4-bit")
+                quantization_config = transformers.BitsAndBytesConfig(
+                    load_in_8bit=load_in_8bit,
+                    load_in_4bit=load_in_4bit,
+                    **(quantization_config or {})
+                )
+
             self.model = transformers.AutoModelForCausalLM.from_pretrained(
                 model,
                 revision=revision,
                 trust_remote_code=trust_remote_code,
                 device_map=device_map,
                 torch_dtype=dtype,
+                quantization_config=quantization_config,
                 **kwargs,
             )
+
+            # Apply PEFT if config provided
+            if peft_config:
+                from peft import get_peft_model, prepare_model_for_kbit_training
+                if quantization_config:
+                    self.model = prepare_model_for_kbit_training(self.model)
+                self.model = get_peft_model(self.model, peft_config)
+
+            # Load delta weights if provided
+            if delta_weights_path:
+                delta_state_dict = torch.load(delta_weights_path, map_location="cpu")
+                self.model.load_state_dict(delta_state_dict, strict=False)
+
         elif isinstance(model, transformers.PreTrainedModel):
             self.model = model
         else:
