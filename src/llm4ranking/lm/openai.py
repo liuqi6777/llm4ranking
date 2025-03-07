@@ -2,7 +2,7 @@ import os
 from typing import Optional, Union, List, Dict
 
 from openai import OpenAI
-from llm4ranking.model.lm.base import LM, LMOuput
+from llm4ranking.lm.base import LM, LMOuput
 
 
 class OpenAIClient(LM):

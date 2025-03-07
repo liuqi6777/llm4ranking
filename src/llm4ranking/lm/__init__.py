@@ -1,5 +1,5 @@
-from llm4ranking.model.lm.huggingface import HFLM
-from llm4ranking.model.lm.openai import OpenAIClient
+from llm4ranking.lm.huggingface import HFLM
+from llm4ranking.lm.openai import OpenAIClient
 
 
 def load_model(

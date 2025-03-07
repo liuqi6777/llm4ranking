@@ -2,7 +2,7 @@ import torch
 import transformers
 from typing import Optional, Union
 
-from llm4ranking.model.lm.base import LM, LMOuput
+from llm4ranking.lm.base import LM, LMOuput
 
 
 class HFLM(LM):
@@ -141,6 +141,16 @@ class HFLM(LM):
         return_num_tokens: Optional[bool] = False,
         **kwargs
     ) -> Union[str, LMOuput]:
+        """Generate text from the model.
+
+        Args:
+            messages: The messages to generate from
+            return_num_tokens: Whether to return the number of tokens
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Either the generated text or a LMOuput object containing the text and the number of tokens
+        """
         max_new_tokens = kwargs.pop("max_new_tokens", self.max_new_tokens)
         input_ids = self.tokenizer.apply_chat_template(
             messages,
@@ -171,12 +181,56 @@ class HFLM(LM):
 
         return output_text
 
+    def logits(
+        self,
+        messages: dict[str, str],
+        return_num_tokens: Optional[bool] = False,
+        **kwargs
+    ) -> torch.Tensor:
+        """Get the logits of the model.
+
+        Args:
+            messages: The messages to get the logits from
+            return_num_tokens: Whether to return the number of tokens
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Either the logits of the last token of the input messages or a LMOuput object containing the logits and the number of tokens
+        """
+        input_ids = self.tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt",
+            truncation=self._truncation,
+            max_length=self.max_length,
+        ).to(self.device)
+        with torch.no_grad():
+            outputs = self.model(input_ids, **kwargs)
+            logits = outputs.logits[0, -1, :]
+        if return_num_tokens:
+            num_processed_tokens = input_ids.shape[-1]
+            return LMOuput(
+                text=messages[-1]["content"],
+                logits=logits,
+                num_processed_tokens=num_processed_tokens,
+            )
+        return logits
+
     def loglikelihood(
         self,
         messages: dict[str, str],
         return_num_tokens: Optional[bool] = False,
         **kwargs
     ) -> Union[float, LMOuput]:
+        """Get the loglikelihood of the model.
+
+        Args:
+            messages: The messages to get the loglikelihood from
+            return_num_tokens: Whether to return the number of tokens
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Either the loglikelihood or a LMOuput object containing the loglikelihood and the number of tokens
+        """
         assert messages[-1]["role"] == "assistant", "Last message must be from the assistant"
         assert len([m for m in messages if m["role"] == "assistant"]) == 1, "Only one assistant message allowed"
         input_ids = self.tokenizer.apply_chat_template(

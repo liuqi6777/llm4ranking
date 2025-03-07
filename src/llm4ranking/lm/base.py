@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, Union
 
+import torch
+
 
 @dataclass
 class LMOuput:
@@ -9,6 +11,7 @@ class LMOuput:
     loglikelihood: Optional[float] = None
     num_processed_tokens: Optional[int] = None
     num_generated_tokens: Optional[int] = None
+    logits: Optional[torch.Tensor] = None
 
 
 class LM(ABC):

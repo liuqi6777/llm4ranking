@@ -1,6 +1,6 @@
 from typing import Union
 
-from llm4ranking.model.lm.base import LMOuput
+from llm4ranking.lm.base import LMOuput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -15,6 +15,11 @@ Only output "A" or "B", do not say anything else or explain.
 
 
 class PairwiseComparison(BaseRankingModel):
+    """Pairwise comparison model that compares two documents at a time.
+    
+    This model takes pairs of documents and determines which one is more relevant
+    to the query. It uses a simple A/B comparison approach.
+    """
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
@@ -26,6 +31,20 @@ class PairwiseComparison(BaseRankingModel):
         return_lm_outputs: bool = False,
         **kwargs,
     ) -> Union[int, tuple[int, LMOuput]]:
+        """Compare two documents and determine which is more relevant.
+
+        Args:
+            query (str): The search query
+            doc1 (str): First document to compare
+            doc2 (str): Second document to compare
+            return_lm_outputs (bool, optional): Whether to return LM outputs. Defaults to False.
+            **kwargs: Additional arguments passed to the LM
+
+        Returns:
+            Union[int, tuple[int, LMOuput]]: 
+                Returns 1 if doc1 is more relevant, -1 if doc2 is more relevant, 0 if tied.
+                If return_lm_outputs is True, also returns the LM outputs.
+        """
         lm_outputs = self.lm.generate(self.create_messages(query, doc1, doc2), return_num_tokens=True, **kwargs)
         lm_outputs_reverse = self.lm.generate(self.create_messages(query, doc2, doc1), return_num_tokens=True, **kwargs)
 
@@ -51,10 +70,28 @@ class PairwiseComparison(BaseRankingModel):
         doc1: str,
         doc2: str,
     ) -> str:
+        """Create prompt messages for comparing two documents.
+
+        Args:
+            query (str): The search query
+            doc1 (str): First document
+            doc2 (str): Second document
+
+        Returns:
+            str: Formatted prompt messages
+        """
         messages = [
             {"role": "user", "content": self.prompt_template.render(query=query, doc1=doc1, doc2=doc2)}
         ]
         return messages
 
     def parse_output(self, output: str) -> str:
+        """Parse the LM output into a document preference.
+
+        Args:
+            output (str): Raw output from the LM
+
+        Returns:
+            str: 'a' or 'b' indicating which document was preferred
+        """
         return output.strip().lower()[0]
