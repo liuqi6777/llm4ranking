@@ -5,8 +5,8 @@ import transformers
 from transformers import AutoModelForCausalLM, Trainer
 from peft import LoraConfig, get_peft_model
 
-from llm4ranking.training.listwise.arguments import ModelArguments, DataArguments, TrainingArguments, LoraArguments
-from llm4ranking.training.listwise.data import make_data_module
+from llm4ranking.training.sft.arguments import ModelArguments, DataArguments, TrainingArguments, LoraArguments
+from llm4ranking.training.sft.data import make_data_module
 
 
 def train():
