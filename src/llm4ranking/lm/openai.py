@@ -1,7 +1,7 @@
 import os
 from typing import Optional, Union, List, Dict
 
-from openai import OpenAI
+import litellm
 from llm4ranking.lm.base import LM, LMOuput
 
 
@@ -18,15 +18,18 @@ class OpenAIClient(LM):
         super().__init__()
         self.model = model
 
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key or os.getenv("LITELLM_API_KEY", os.getenv("OPENAI_API_KEY"))
         if not self.api_key:
-            raise ValueError("API key must be provided either via `api_key` or environment variable.")
+            raise ValueError("API key must be provided via `api_key` or environment variables.")
 
-        self.client = OpenAI(
-            base_url=base_url,
-            api_key=api_key,
+        self.base_url = base_url
+        
+        self.litellm_params = {
+            "model": self.model,
+            "api_base": self.base_url,
+            "api_key": self.api_key,
             **kwargs
-        )
+        }
 
         self._max_length = max_length
         self._truncation = truncation
@@ -46,18 +49,17 @@ class OpenAIClient(LM):
         **kwargs
     ) -> Union[str, LMOuput]:
         
-        response = self.client.chat.completions.create(
-            model=self.model,
+        response = litellm.completion(
             messages=messages,
-            max_completion_tokens=kwargs.pop("max_completion_tokens", self.max_new_tokens),
-            **kwargs
+            max_tokens=kwargs.pop("max_completion_tokens", self.max_new_tokens),
+            **{**self.litellm_params, **kwargs}
         )
 
         generated_message = response.choices[0].message.content.strip()
 
         if return_num_tokens:
-            num_processed_tokens = response.usage.prompt_tokens
-            num_generated_tokens = response.usage.completion_tokens
+            num_processed_tokens = response.usage.prompt_tokens if response.usage else 0
+            num_generated_tokens = response.usage.completion_tokens if response.usage else 0
 
             return LMOuput(
                 text=generated_message,
@@ -72,4 +74,5 @@ class OpenAIClient(LM):
         messages: List[Dict[str, str]],
         **kwargs
     ) -> Union[float, LMOuput]:
-        raise NotImplementedError("OpenAI API does not support loglikelihood calculation")
+        raise NotImplementedError("LiteLLM API does not support loglikelihood calculation")
+    
