@@ -2,9 +2,11 @@ import copy
 import random
 import time
 from abc import ABC, abstractmethod
-from typing import Optional, Callable, Any, Union
+from typing import Optional, Callable, Any, Union, List
 from itertools import combinations
 from dataclasses import dataclass, field
+
+from llm4ranking.lm.base import LMOuput
 
 
 @dataclass
@@ -19,8 +21,7 @@ class RankingRecord:
     num_generated_tokens: Optional[int] = None
     latency: Optional[float] = None
 
-    lm_output_texts: list[str] = field(default_factory=list)
-    lm_output_loglikelihoods: list[float] = field(default_factory=list)
+    lm_outputs: list[LMOuput] = field(default_factory=list)
 
     rank_indices: Optional[list[int]] = None
 
@@ -33,6 +34,8 @@ class Reranker(ABC):
         query: str,
         candidates: list[str],
         ranking_func: Callable,
+        return_record: bool = False,
+        return_indices: bool = False,
         **kwargs: dict[str, Any]
     ) -> tuple[list[str], list[int]]:
         pass
@@ -46,6 +49,7 @@ class PointwiseReranker(Reranker):
         ranking_func: Callable[[str, str], float],
         truncate_length: Optional[int] = None,
         return_record: bool = False,
+        return_indices: bool = False,
         **kwargs: dict[str, Any],
     ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
         if return_record:
@@ -65,7 +69,7 @@ class PointwiseReranker(Reranker):
             if return_record:
                 loglikelihood, lm_outputs = ranking_func(query, candidate, return_lm_outputs=True, **kwargs)
                 record.num_processed_tokens += lm_outputs.num_processed_tokens
-                record.lm_output_loglikelihoods.append(loglikelihood)
+                record.lm_outputs.append(lm_outputs)
             else:
                 loglikelihood = ranking_func(query, candidate, **kwargs)
             loglikelihoods.append(loglikelihood)
@@ -76,34 +80,25 @@ class PointwiseReranker(Reranker):
             ranked_indices, _ = zip(*sorted(enumerate(loglikelihoods), key=lambda x: x[1], reverse=True))
             ranked_result = [candidates[i] for i in ranked_indices]
 
+        outputs = (ranked_result,)
+        if return_indices:
+            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return ranked_result, ranked_indices, record
+            return outputs + (record,)
+        return outputs
 
-        return ranked_result, ranked_indices
 
-
-class PairwiseReranker(Reranker):
+class PairwiseAllPairReranker(Reranker):
 
     def rerank(
         self,
         query: str,
         candidates: list[str],
         ranking_func: Callable[[str, str, str], int],
-        sorting_method: str,
         return_record: bool = False,
-        **kwargs: dict[str, Any],
-    ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
-
-        return getattr(self, f"_{sorting_method}")(query, candidates, ranking_func, return_record=return_record, **kwargs)
-
-    def _all_pair(
-        self,
-        query: str,
-        candidates: list[str],
-        ranking_func: Callable[[str, str, str], int],
-        return_record: bool = False,
+        return_indices: bool = False,
         **kwargs: dict[str, Any],
     ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
 
@@ -140,20 +135,26 @@ class PairwiseReranker(Reranker):
         ranked_indices, _ = zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
         ranked_result = [candidates[i] for i in ranked_indices]
 
+        outputs = (ranked_result,)
+        if return_indices:
+            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return ranked_result, ranked_indices, record
+            return outputs + (record,)
+        return outputs
 
-        return ranked_result, ranked_indices
 
-    def _bubble_sort(
+class PairwiseBubbleSortReranker(Reranker):
+
+    def rerank(
         self,
         query: str,
         candidates: list[str],
         ranking_func: Callable[[str, str, str], int],
         topk: int = 10,
         return_record: bool = False,
+        return_indices: bool = False,
         **kwargs: dict[str, Any],
     ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
 
@@ -192,20 +193,26 @@ class PairwiseReranker(Reranker):
                 if not changed:
                     last_end -= 1
 
+        outputs = (candidates,)
+        if return_indices:
+            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return candidates, ranked_indices, record
+            return outputs + (record,)
+        return outputs
 
-        return candidates, ranked_indices
 
-    def _heap_sort(
+class PairwiseHeapSortReranker(Reranker):
+
+    def rerank(
         self,
         query: str,
         candidates: list[str],
         ranking_func: Callable[[str, str, str], int],
         topk: int = 10,
         return_record: bool = False,
+        return_indices: bool = False,
         **kwargs: dict[str, Any],
     ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
 
@@ -256,12 +263,14 @@ class PairwiseReranker(Reranker):
             # Heapify root element
             heapify(i, 0)
 
+        outputs = (reversed(candidates),)
+        if return_indices:
+            outputs += (reversed(ranked_indices),)
         if return_record:
             record.latency = time.time() - t
-            record.rank_indices = ranked_indices
-            return reversed(candidates), reversed(ranked_indices), record
-
-        return reversed(candidates), reversed(ranked_indices)
+            record.rank_indices = reversed(ranked_indices)
+            return outputs + (record,)
+        return outputs
 
 
 class ListwiseSilidingWindowReranker(Reranker):
@@ -276,6 +285,7 @@ class ListwiseSilidingWindowReranker(Reranker):
         step: int = 10,
         truncate_length: Optional[int] = None,
         return_record: bool = False,
+        return_indices: bool = False,
         **kwargs: dict[str, Any],
     ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
 
@@ -307,7 +317,7 @@ class ListwiseSilidingWindowReranker(Reranker):
                 record.num_processed_docs += (end_pos - start_pos)
                 record.num_processed_tokens += lm_outputs.num_processed_tokens
                 record.num_generated_tokens += lm_outputs.num_generated_tokens
-                record.lm_output_texts.append(lm_outputs.text)
+                record.lm_outputs.append(lm_outputs)
             else:
                 permutation = ranking_func(query, ranked_result[start_pos:end_pos], **kwargs)
 
@@ -320,12 +330,14 @@ class ListwiseSilidingWindowReranker(Reranker):
 
             start_pos, end_pos = start_pos - step, end_pos - step
 
+        outputs = (ranked_result,)
+        if return_indices:
+            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return ranked_result, ranked_indices, record
-
-        return ranked_result, ranked_indices
+            return outputs + (record,)
+        return outputs
 
 
 class TournamentReranker(Reranker):
@@ -339,6 +351,7 @@ class TournamentReranker(Reranker):
         promotion_sizes: tuple[int] = (10, 4, 10, 5, 1),
         truncate_length: Optional[int] = None,
         return_record: bool = False, 
+        return_indices: bool = False,
         **kwargs: dict[str, Any],
     ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
 
@@ -381,7 +394,7 @@ class TournamentReranker(Reranker):
                         record.num_processed_docs += len(group_candidates)
                         record.num_processed_tokens += lm_outputs.num_processed_tokens
                         record.num_generated_tokens += lm_outputs.num_generated_tokens
-                        record.lm_output_texts.append(lm_outputs.text)
+                        record.lm_outputs.append(lm_outputs)
                     else:
                         top_indices = ranking_func(query, group_candidates, promotion_size, **kwargs)  # select top M form N candidates
 
@@ -396,9 +409,11 @@ class TournamentReranker(Reranker):
         ranked_indices, _ = zip(*sorted(enumerate(doc_scores), key=lambda x: x[1], reverse=True))
         ranked_result = [candidates[i] for i in ranked_indices]
 
+        outputs = (ranked_result,)
+        if return_indices:
+            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return ranked_result, ranked_indices, record
-
-        return ranked_result, ranked_indices
+            return outputs + (record,)
+        return outputs

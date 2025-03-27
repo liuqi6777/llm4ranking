@@ -8,33 +8,8 @@ from functools import partial
 from tqdm import tqdm
 from datasets import load_dataset
 
-from llm4ranking.ranker import *
-from llm4ranking.model import *
+from llm4ranking import Reranker
 from llm4ranking.evaluation.trec_eval import trec_eval
-
-
-RERANKING_APPROACHES = {
-    "listwise-sw": (ListwiseSilidingWindowReranker, ListwiseGeneration),
-    "pointwise-rg": (PointwiseReranker, RelevanceGeneration),
-    "pointwise-qg": (PointwiseReranker, QueryGeneration),
-    "pairwise": (PairwiseReranker, PairwiseComparison),
-    "tournament": (TournamentReranker, Selection),
-}
-
-
-def simple_rerank(
-    query: str,
-    candidates: list[str],
-    reranking_approach: str,
-    model_type: str,
-    model_args: dict,
-    reranking_args: dict = {},
-    model_fw_args: dict = {},
-    prompt_template: str = None,
-):
-    reranker = RERANKING_APPROACHES[reranking_approach][0]()
-    ranking_func = RERANKING_APPROACHES[reranking_approach][1](model_type, model_args, prompt_template)
-    return reranker.rerank(query, candidates, ranking_func, **reranking_args, **model_fw_args)
 
 
 def simple_evaluate(
@@ -50,9 +25,15 @@ def simple_evaluate(
     num_passes: int = 1,
     output_dir: str = None,
 ):
-    reranker = RERANKING_APPROACHES[reranking_approach][0]()
-    ranking_func = RERANKING_APPROACHES[reranking_approach][1](model_type, model_args, prompt_template)
-    rerank = partial(reranker.rerank, ranking_func=ranking_func, **reranking_args, **model_fw_args)
+    reranker = Reranker(
+        reranking_approach=reranking_approach,
+        model_type=model_type,
+        model_name=model_args["model"],
+        model_args=model_args,
+        prompt_template=prompt_template,
+        reranking_args=reranking_args,
+        model_fw_args=model_fw_args,
+    )
 
     results = {}
 
@@ -68,10 +49,11 @@ def simple_evaluate(
             rerank_results = []
             all_records = []
             for i in tqdm(range(len(prev_results))):
-                _, rerank_indices, record = rerank(
+                _, rerank_indices, record = reranker.rerank(
                     query=prev_results[i]["query"],
                     candidates=[x["content"] for x in prev_results[i]["hits"]],
                     return_record=True,
+                    return_indices=True
                 )
                 rerank_results.append({
                     "query": prev_results[i]["query"],
@@ -159,5 +141,5 @@ if __name__ == "__main__":
     )
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:
-        json.dump(results, f, indent=4)
+        json.dump(results, f, indent=4, skipkeys=True)
     print(f"Results saved to {output_dir}")

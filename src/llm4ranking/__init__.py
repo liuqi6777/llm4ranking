@@ -1,5 +1,19 @@
-from llm4ranking.evaluation.evaluator import simple_evaluate, simple_rerank
 from typing import Optional, Union, List, Dict
+from functools import partial
+
+from llm4ranking.ranker import *
+from llm4ranking.model import *
+
+
+RERANKING_APPROACHES = {
+    "rankgpt": (ListwiseSilidingWindowReranker, RankGPT),
+    "rel-gen": (PointwiseReranker, RelevanceGeneration),
+    "query-gen": (PointwiseReranker, QueryGeneration),
+    "prp": (PairwiseHeapSortReranker, PRP),
+    "tourrank": (TournamentReranker, Selection),
+    "first": (ListwiseSilidingWindowReranker, First),
+    "fg-rel-gen": (PointwiseReranker, FineGrainedRelevanceGeneration),
+}
 
 
 def get_default_args_by_approach(approach: str) -> Dict:
@@ -11,76 +25,85 @@ def get_default_args_by_approach(approach: str) -> Dict:
     Returns:
         Dict: Default arguments for the specified approach.
     """
+    # TODO: Add more default arguments
     defaults = {
-        "listwise-sw": {},
-        "pointwise-rg": {},
-        "pointwise-qg": {},
-        "pairwise": {},
-        "tournament": {}
+        "rankgpt": {},
+        "rel-gen": {},
+        "query-gen": {},
+        "prp": {},
+        "tourrank": {}
     }
     return defaults.get(approach, {})
 
 
-def rerank(
-    query: str,
-    candidates: List[str],
-    model: str = "meta-llama/Llama-2-7b-chat-hf",
-    approach: str = "listwise-sw",
-    model_type: str = "hf",
-    model_args: Optional[dict] = None,
-    reranking_args: Optional[dict] = None,
-    model_fw_args: Optional[dict] = None,
-    prompt_template: Optional[str] = None,
-) -> Union[List[str], List[int]]:
-    """Easy-to-use function for reranking a list of candidates given a query.
+class Reranker:
+    """Easy-to-use class for reranking a list of candidates given a query.
 
     This is the main entry point for using the library. It provides a simple interface
     to rerank documents using various approaches and models.
-
-    Args:
-        query (str): The search query.
-        candidates (List[str]): List of candidate documents/passages to rerank.
-        model (str, optional): Model identifier or path. Defaults to "meta-llama/Llama-2-7b-chat-hf".
-        approach (str, optional): Reranking approach. One of ["listwise-sw", "pointwise-rg", "pointwise-qg", "pairwise", "tournament"]. 
-            Defaults to "listwise-sw".
-        model_type (str, optional): Type of model to use. One of ["hf", "openai"]. Defaults to "hf".
-        model_args (dict, optional): Additional arguments for model initialization. Defaults to None.
-        reranking_args (dict, optional): Additional arguments for reranking. Defaults to None.
-        model_fw_args (dict, optional): Additional arguments for model forward pass. Defaults to None.
-        prompt_template (str, optional): Custom prompt template. Defaults to None.
-
-    Returns:
-        Union[List[str], List[int]]: Reranked candidates or indices of reranked candidates.
     """
-    # Get default arguments for the specified approach
-    default_reranking_args = get_default_args_by_approach(approach)
-    default_model_fw_args = {
-        "max_length": default_reranking_args.pop("max_length", 1024),
-        "temperature": default_reranking_args.pop("temperature", 0.0),
-    }
 
-    # Initialize arguments with defaults
-    if model_args is None:
-        model_args = {"model": model}
-    if reranking_args is None:
-        reranking_args = {}
-    if model_fw_args is None:
-        model_fw_args = {}
+    def __init__(
+        self,
+        reranking_approach: str = "rankgpt",
+        model_type: str = "openai",
+        model_name: Optional[str] = None,
+        model_args: Optional[dict] = None,
+        reranking_args: Optional[dict] = None,
+        model_fw_args: Optional[dict] = None,
+        prompt_template: Optional[str] = None,
+    ):
+        """Initialize the reranker.
+        Args:
+            reranking_approach (str, optional): Reranking approach.
+            model_type (str, optional): Type of model to use. One of ["hf", "openai", "vllm"]. Defaults to "openai".
+            model_name (str, optional): Model identifier or path.
+            model_args (dict, optional): Additional arguments for model initialization.
+            reranking_args (dict, optional): Additional arguments for reranking.
+            model_fw_args (dict, optional): Additional arguments for model forward pass.
+            prompt_template (str, optional): Custom prompt template.
 
-    # Merge defaults with user-provided arguments
-    reranking_args = {**default_reranking_args, **reranking_args}
-    model_fw_args = {**default_model_fw_args, **model_fw_args}
+        Returns:
+            Tuple[List[str], List[int]]: Reranked candidates and indices of reranked candidates.
+        """
+        default_reranking_args = get_default_args_by_approach(reranking_approach)
+        default_model_fw_args = {
+            # "max_length": default_reranking_args.pop("max_length", 1024),
+            "temperature": default_reranking_args.pop("temperature", 0.0),
+        }
 
-    reranked_indices = simple_rerank(
-        query=query,
-        candidates=candidates,
-        reranking_approach=approach,
-        model_type=model_type,
-        model_args=model_args,
-        reranking_args=reranking_args,
-        model_fw_args=model_fw_args,
-        prompt_template=prompt_template,
-    )
+        # Initialize arguments with defaults
+        if model_args is None:
+            assert model_name is not None, "model_name must be provided if model_args is None"
+            model_args = {"model": model_name}
+        else:
+            if "model" not in model_args and model_name is None:
+                raise ValueError("model_args must contain 'model' key or model_name must be provided")
+            model_args["model"] = model_args.get("model", model_name)
+        if reranking_args is None:
+            reranking_args = {}
+        if model_fw_args is None:
+            model_fw_args = {}
 
-    return [candidates[i] for i in reranked_indices]
+        # Merge defaults with user-provided arguments
+        reranking_args = {**default_reranking_args, **reranking_args}
+        model_fw_args = {**default_model_fw_args, **model_fw_args}
+
+        self.reranker = RERANKING_APPROACHES[reranking_approach][0]()
+        self.ranking_func = RERANKING_APPROACHES[reranking_approach][1](model_type, model_args, prompt_template)
+        self.rerank = partial(
+            self.reranker.rerank,
+            ranking_func=self.ranking_func,
+            **reranking_args,
+            **model_fw_args
+        )
+
+    def rerank(
+        self,
+        query: str,
+        candidates: List[str]
+    ) -> List[int]:
+        """Rerank a list of candidates given a query.
+        """
+        pass
 
