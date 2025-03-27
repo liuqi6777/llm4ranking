@@ -9,7 +9,7 @@ RERANKING_APPROACHES = {
     "rankgpt": (ListwiseSilidingWindowReranker, RankGPT),
     "rel-gen": (PointwiseReranker, RelevanceGeneration),
     "query-gen": (PointwiseReranker, QueryGeneration),
-    "prp": (PairwiseHeapSortReranker, PRP),
+    "prp-heap": (PairwiseHeapSortReranker, PRP),
     "tourrank": (TournamentReranker, Selection),
     "first": (ListwiseSilidingWindowReranker, First),
     "fg-rel-gen": (PointwiseReranker, FineGrainedRelevanceGeneration),
@@ -27,11 +27,20 @@ def get_default_args_by_approach(approach: str) -> Dict:
     """
     # TODO: Add more default arguments
     defaults = {
-        "rankgpt": {},
+        "rankgpt": {
+            "window_size": 20, "step": 10, "truncate_length": 300,
+            "do_sample": False, "max_new_tokens": 120
+        },
         "rel-gen": {},
         "query-gen": {},
-        "prp": {},
-        "tourrank": {}
+        "prp": {"topk": 10},
+        "tourrank": {
+            "tuornament_times": 1, "truncate_length": 300,
+            "do_sample": False, "max_new_tokens": 120
+        },
+        "first": {
+            "window_size": 20, "step": 10, "truncate_length": 300,
+        }
     }
     return defaults.get(approach, {})
 
@@ -67,10 +76,6 @@ class Reranker:
             Tuple[List[str], List[int]]: Reranked candidates and indices of reranked candidates.
         """
         default_reranking_args = get_default_args_by_approach(reranking_approach)
-        default_model_fw_args = {
-            # "max_length": default_reranking_args.pop("max_length", 1024),
-            "temperature": default_reranking_args.pop("temperature", 0.0),
-        }
 
         # Initialize arguments with defaults
         if model_args is None:
@@ -87,7 +92,6 @@ class Reranker:
 
         # Merge defaults with user-provided arguments
         reranking_args = {**default_reranking_args, **reranking_args}
-        model_fw_args = {**default_model_fw_args, **model_fw_args}
 
         self.reranker = RERANKING_APPROACHES[reranking_approach][0]()
         self.ranking_func = RERANKING_APPROACHES[reranking_approach][1](model_type, model_args, prompt_template)
