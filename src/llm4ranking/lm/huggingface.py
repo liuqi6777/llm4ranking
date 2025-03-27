@@ -265,10 +265,11 @@ class HFLM(LM):
             return_tensors="pt",
             truncation=self._truncation,
             max_length=self.max_length,
+            add_generation_prompt=True
         ).to(self.device)
         with torch.no_grad():
             outputs = self.model(input_ids, **kwargs)
-            logits = outputs.logits[0, -1, :].cpu().numpy()
+            logits = outputs.logits[0, -1, :].detach().float().cpu().numpy()
         if return_num_tokens:
             num_processed_tokens = input_ids.shape[-1]
             return LMOuput(
