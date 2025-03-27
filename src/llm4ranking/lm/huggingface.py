@@ -171,6 +171,10 @@ class HFLM(LM):
             Either the generated text or a LMOuput object containing the text and the number of tokens
         """
         max_new_tokens = kwargs.pop("max_new_tokens", self.max_new_tokens)
+        if "do_sample" in kwargs and kwargs["do_sample"] is False:
+            self.model.generation_config.temperature = None
+            self.model.generation_config.top_k = None
+            self.model.generation_config.top_p = None
         input_ids = self.tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
@@ -183,7 +187,7 @@ class HFLM(LM):
                 input_ids=input_ids,
                 max_new_tokens=max_new_tokens,
                 use_cache=True,
-                pad_token_id=self.tokenizer.eos_token_id,
+                # pad_token_id=self.tokenizer.eos_token_id,
                 **kwargs
             )[0, input_ids.shape[-1]:].cpu()
         output_text = self.tokenizer.decode(outputs, skip_special_tokens=True)
