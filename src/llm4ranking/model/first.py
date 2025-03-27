@@ -4,10 +4,12 @@ from llm4ranking.lm.base import LMOuput
 from llm4ranking.model.base import BaseRankingModel
 
 
-DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} documents, each indicated by a numerical identifier. Rank the passages based on their relevance to the search query. All the passages should be listed using identifiers in descending order of relevance. Search Query: {{ query }}.
+DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} documents, each indicated by a alphabelt identifier. Rank the passages based on their relevance to the search query. All the passages should be listed using identifiers in descending order of relevance. Search Query: {{ query }}.
+{% set letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
 {% for content in candidates %}
-{{ loop.index }}: {{content}}
+[{{ letters[loop.index0] }}]: {{content}}
 {% endfor %}
+You should provide the list of identifiers in the order of relevance, for example, "C, A, B, ...", without any additional texts
 """
 
 
@@ -15,6 +17,7 @@ class First(BaseRankingModel):
     """FIRST reranker that uses the logit of the last input token for listwise ranking."""
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
+    DOCIDS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
     def __call__(
         self,
@@ -34,11 +37,14 @@ class First(BaseRankingModel):
         Returns:
             Either the ranked indices or a tuple of (ranked indices, LM outputs)
         """
+        if len(candidates) > len(self.DOCIDS):
+            raise ValueError(f"Number of candidates ({len(candidates)}) exceeds the maximum number of supported candidates ({len(self.DOCIDS)})")
+
         messages = self.create_messages(query, candidates)
         lm_outputs = self.lm.logits(messages, return_num_tokens=True, **kwargs)
         logits = lm_outputs.logits
-        ids = [self.lm.tokenizer.decode([i]) for i in range(len(candidates))]
-        logit_for_each_candidate = [logits[int(i)] for i in ids]
+        token_ids = [self.lm.tokenizer.encode(i)[0] for i in self.DOCIDS[0:len(candidates)]]
+        logit_for_each_candidate = [logits[i] for i in token_ids]
         ranking = sorted(range(len(logit_for_each_candidate)), key=lambda i: logit_for_each_candidate[i], reverse=True)
         if return_lm_outputs:
             return ranking, lm_outputs
@@ -58,11 +64,7 @@ class First(BaseRankingModel):
         Returns:
             List of messages, one per candidate
         """
-        messages = []
-        for candidate in candidates:
-            content = self.prompt_template.render(
-                query=query,
-                candidates=[candidate]  # Process one candidate at a time
-            )
-            messages.append({"role": "user", "content": content})
+        messages = [
+            {"role": "user", "content": self.prompt_template.render(query=query, candidates=candidates)}
+        ]
         return messages
