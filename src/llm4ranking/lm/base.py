@@ -8,7 +8,7 @@ import torch
 
 @dataclass
 class LMOuput:
-    text: str
+    text: Optional[str] = None
     loglikelihood: Optional[float] = None
     num_processed_tokens: Optional[int] = None
     num_generated_tokens: Optional[int] = None

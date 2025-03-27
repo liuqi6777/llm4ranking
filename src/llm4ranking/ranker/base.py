@@ -70,6 +70,8 @@ class PointwiseReranker(Reranker):
                 loglikelihood, lm_outputs = ranking_func(query, candidate, return_lm_outputs=True, **kwargs)
                 record.num_processed_tokens += lm_outputs.num_processed_tokens
                 record.lm_outputs.append(lm_outputs)
+                if lm_outputs.num_generated_tokens is not None:
+                    record.num_generated_tokens += lm_outputs.num_generated_tokens
             else:
                 loglikelihood = ranking_func(query, candidate, **kwargs)
             loglikelihoods.append(loglikelihood)
@@ -119,7 +121,8 @@ class PairwiseAllPairReranker(Reranker):
             if return_record:
                 res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
                 record.num_processed_tokens += lm_outputs.num_processed_tokens
-                record.num_generated_tokens += lm_outputs.num_generated_tokens
+                if lm_outputs.num_generated_tokens is not None:
+                    record.num_generated_tokens += lm_outputs.num_generated_tokens
                 record.num_processed_docs += 4
             else:
                 res = ranking_func(query, candidates[i], candidates[j], **kwargs)
@@ -177,7 +180,8 @@ class PairwiseBubbleSortReranker(Reranker):
                 if return_record:
                     res, lm_outputs = ranking_func(query, candidates[j], candidates[j - 1], return_lm_outputs=True, **kwargs)
                     record.num_processed_tokens += lm_outputs.num_processed_tokens
-                    record.num_generated_tokens += lm_outputs.num_generated_tokens
+                    if lm_outputs.num_generated_tokens is not None:
+                        record.num_generated_tokens += lm_outputs.num_generated_tokens
                     record.num_processed_docs += 4
                 else:
                     res = ranking_func(query, candidates[j], candidates[j - 1], **kwargs)
@@ -232,7 +236,8 @@ class PairwiseHeapSortReranker(Reranker):
             if return_record:
                 res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
                 record.num_processed_tokens += lm_outputs.num_processed_tokens
-                record.num_generated_tokens += lm_outputs.num_generated_tokens
+                if lm_outputs.num_generated_tokens is not None:
+                    record.num_generated_tokens += lm_outputs.num_generated_tokens
                 record.num_processed_docs += 4
             else:
                 res = ranking_func(query, candidates[i], candidates[j], **kwargs)
@@ -316,7 +321,8 @@ class ListwiseSilidingWindowReranker(Reranker):
                 permutation, lm_outputs = ranking_func(query, ranked_result[start_pos:end_pos], return_lm_outputs=True, **kwargs)
                 record.num_processed_docs += (end_pos - start_pos)
                 record.num_processed_tokens += lm_outputs.num_processed_tokens
-                record.num_generated_tokens += lm_outputs.num_generated_tokens
+                if lm_outputs.num_generated_tokens is not None:
+                    record.num_generated_tokens += lm_outputs.num_generated_tokens
                 record.lm_outputs.append(lm_outputs)
             else:
                 permutation = ranking_func(query, ranked_result[start_pos:end_pos], **kwargs)
