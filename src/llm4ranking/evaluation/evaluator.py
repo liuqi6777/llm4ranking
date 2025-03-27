@@ -141,5 +141,5 @@ if __name__ == "__main__":
     )
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:
-        json.dump(results, f, indent=4, skipkeys=True)
+        json.dump(results, f, indent=4, default=str)
     print(f"Results saved to {output_dir}")
