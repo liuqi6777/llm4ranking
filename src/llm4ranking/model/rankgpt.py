@@ -14,8 +14,8 @@ Rank the {{ candidates|length }} passages above based on their relevance to the 
 """
 
 
-class ListwiseGeneration(BaseRankingModel):
-    """Listwise ranking model that generates a complete ranking of documents.
+class RankGPT(BaseRankingModel):
+    """RankGPT generates a complete ranking of documents.
     
     This model takes all candidates at once and generates their relative ordering
     based on relevance to the query.

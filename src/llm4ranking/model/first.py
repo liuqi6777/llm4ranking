@@ -11,8 +11,8 @@ DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} doc
 """
 
 
-class ListwiseLogit(BaseRankingModel):
-    """Ranker that uses the logit of the last input token for listwise ranking."""
+class First(BaseRankingModel):
+    """FIRST reranker that uses the logit of the last input token for listwise ranking."""
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
@@ -35,7 +35,7 @@ class ListwiseLogit(BaseRankingModel):
             Either the ranked indices or a tuple of (ranked indices, LM outputs)
         """
         messages = self.create_messages(query, candidates)
-        lm_outputs = self.lm.generate(messages, return_num_tokens=True, **kwargs)
+        lm_outputs = self.lm.logits(messages, return_num_tokens=True, **kwargs)
         logits = lm_outputs.logits
         ids = [self.lm.tokenizer.decode([i]) for i in range(len(candidates))]
         logit_for_each_candidate = [logits[int(i)] for i in ids]

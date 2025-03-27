@@ -60,3 +60,14 @@ class RelevanceGeneration(BaseRankingModel):
         if return_lm_outputs:
             return lm_outputs.loglikelihood, lm_outputs
         return lm_outputs.loglikelihood
+
+
+class FineGrainedRelevanceGeneration(RelevanceGeneration):
+    """Fine-grained relevance model that scores individual documents.
+    
+    This model evaluates each document independently by determining how well
+    it answers the query. It uses a 5-point scale relevance judgment approach
+    and the log likelihood of the selected response is used as a relevance score.
+    """
+
+    pass

@@ -14,8 +14,8 @@ Only output "A" or "B", do not say anything else or explain.
 """
 
 
-class PairwiseComparison(BaseRankingModel):
-    """Pairwise comparison model that compares two documents at a time.
+class PRP(BaseRankingModel):
+    """PRP (Pairwise Ranking Prompting) that compares two documents at a time.
     
     This model takes pairs of documents and determines which one is more relevant
     to the query. It uses a simple A/B comparison approach.
