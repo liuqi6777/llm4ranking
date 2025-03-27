@@ -22,6 +22,9 @@ class RelevanceGeneration(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
+    ranker = "pointwise"
+    name = "RelevanceGeneration"
+
     def create_messages(
         self,
         query: str,

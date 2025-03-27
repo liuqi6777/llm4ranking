@@ -19,7 +19,7 @@ Output the {{ num_selection }} unique documents that are most relevant to the Qu
 """
 
 
-class Selection(BaseRankingModel):
+class TourRankSelection(BaseRankingModel):
     """Tournament selection model that picks top documents from a set.
     
     This model takes a set of documents and directly selects a specified number
@@ -27,6 +27,9 @@ class Selection(BaseRankingModel):
     """
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
+
+    ranker = "tourrank"
+    name = "TourRank"
 
     def __call__(
         self,

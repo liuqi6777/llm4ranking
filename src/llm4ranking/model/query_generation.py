@@ -21,6 +21,9 @@ class QueryGeneration(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
+    ranker = "pointwise"
+    name = "QueryGeneration"
+
     def create_messages(
         self,
         query: str,

@@ -1,4 +1,4 @@
-from typing import Optional, Union, List, Dict
+from typing import Optional, List, Dict
 from functools import partial
 
 from llm4ranking.ranker import *
@@ -10,10 +10,21 @@ RERANKING_APPROACHES = {
     "rel-gen": (PointwiseReranker, RelevanceGeneration),
     "query-gen": (PointwiseReranker, QueryGeneration),
     "prp-heap": (PairwiseHeapSortReranker, PRP),
-    "tourrank": (TournamentReranker, Selection),
+    "prp-allpair": (PairwiseAllPairReranker, PRP),
+    "prp-bubble": (PairwiseBubbleSortReranker, PRP),
+    "tourrank": (TournamentReranker, TourRankSelection),
     "first": (ListwiseSilidingWindowReranker, First),
     "fg-rel-gen": (PointwiseReranker, FineGrainedRelevanceGeneration),
 }
+
+
+def list_available_reranking_approaches() -> List[str]:
+    """List available reranking approaches.
+
+    Returns:
+        List[str]: List of available reranking approaches.
+    """
+    return list(RERANKING_APPROACHES.keys())
 
 
 def get_default_args_by_approach(approach: str) -> Dict:
@@ -93,10 +104,10 @@ class Reranker:
         # Merge defaults with user-provided arguments
         reranking_args = {**default_reranking_args, **reranking_args}
 
-        self.reranker = RERANKING_APPROACHES[reranking_approach][0]()
+        self.ranker = RERANKING_APPROACHES[reranking_approach][0]()
         self.ranking_func = RERANKING_APPROACHES[reranking_approach][1](model_type, model_args, prompt_template)
         self.rerank = partial(
-            self.reranker.rerank,
+            self.ranker.rerank,
             ranking_func=self.ranking_func,
             **reranking_args,
             **model_fw_args
@@ -105,9 +116,13 @@ class Reranker:
     def rerank(
         self,
         query: str,
-        candidates: List[str]
+        candidates: List[str],
+        **kwargs
     ) -> List[int]:
         """Rerank a list of candidates given a query.
         """
         pass
 
+    @property
+    def LLM(self):
+        return self.ranking_func.lm

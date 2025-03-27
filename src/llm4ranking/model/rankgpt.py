@@ -23,6 +23,9 @@ class RankGPT(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
+    ranker = "listwise"
+    name = "RankGPT"
+
     def __call__(
         self,
         query: str,

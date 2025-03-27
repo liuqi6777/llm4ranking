@@ -14,6 +14,9 @@ class BaseRankingModel(ABC):
 
     DEFAULT_PROMPT_TEMPLATE = ""
 
+    ranker = "base"
+    name = ""
+
     def __init__(
         self,
         model_type: str,
@@ -53,3 +56,8 @@ class BaseRankingModel(ABC):
             value (str): New template string
         """
         self._prompt_template = Template(value)
+
+    @property
+    def ranker(self):
+        """Get the ranker type."""
+        return self.ranker
