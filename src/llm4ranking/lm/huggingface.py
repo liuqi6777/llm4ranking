@@ -1,6 +1,7 @@
 import torch
 import transformers
 from typing import Optional, Union
+from peft import PeftModel
 
 from llm4ranking.lm.base import LM, LMOuput
 
@@ -18,9 +19,9 @@ class HFLM(LM):
         trust_remote_code: Optional[bool] = True,
         use_fast_tokenizer: Optional[bool] = False,
         # PEFT options
-        peft_config: Optional[dict] = None,
+        peft: Optional[str] = None,
         # Delta weights options
-        delta_weights_path: Optional[str] = None,
+        delta: Optional[str] = None,
         # Quantization options
         load_in_8bit: bool = False,
         load_in_4bit: bool = False,
@@ -39,8 +40,8 @@ class HFLM(LM):
             dtype: The data type to use
             trust_remote_code: Whether to trust the remote code
             use_fast_tokenizer: Whether to use a fast tokenizer
-            peft_config: The PEFT configuration to use
-            delta_weights_path: The path to the delta weights to use
+            peft: The path to the PEFT model to use
+            delta: The path to the delta weights to use
             quantization_config: The quantization configuration to use
             load_in_8bit: Whether to load the model in 8-bit
             load_in_4bit: Whether to load the model in 4-bit
@@ -70,17 +71,35 @@ class HFLM(LM):
                 **kwargs,
             )
 
-            # Apply PEFT if config provided
-            if peft_config:
-                from peft import get_peft_model, prepare_model_for_kbit_training
-                if quantization_config:
-                    self.model = prepare_model_for_kbit_training(self.model)
-                self.model = get_peft_model(self.model, peft_config)
+            if peft and delta:
+                raise ValueError(
+                    "Cannot use both 'peft' and 'delta' options at the same time."
+                )
 
-            # Load delta weights if provided
-            if delta_weights_path:
-                delta_state_dict = torch.load(delta_weights_path, map_location="cpu")
-                self.model.load_state_dict(delta_state_dict, strict=False)
+            if peft:
+                if self._model.config.vocab_size != len(self.tokenizer):
+                    # resize model for LoRAs with added tokens
+                    self._model.resize_token_embeddings(len(self.tokenizer))
+                self._model = PeftModel.from_pretrained(
+                    self._model, peft, revision=revision
+                )
+            elif delta:
+                _model_delta = transformers.AutoModelForCausalLM.from_pretrained(
+                    delta,
+                    revision=revision,
+                    torch_dtype=dtype,
+                    trust_remote_code=trust_remote_code,
+                    **kwargs,
+                )
+                for name, param in self._model.state_dict().items():
+                    try:
+                        param.data += _model_delta.state_dict()[name]
+                    except KeyError:
+                        raise KeyError(f"Delta model is missing weights for layer: {name}")
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"Failed to add delta weights to layer {name}. Error: {e}"
+                        )
 
         elif isinstance(model, transformers.PreTrainedModel):
             self.model = model
@@ -181,40 +200,6 @@ class HFLM(LM):
 
         return output_text
 
-    def logits(
-        self,
-        messages: dict[str, str],
-        return_num_tokens: Optional[bool] = False,
-        **kwargs
-    ) -> torch.Tensor:
-        """Get the logits of the model.
-
-        Args:
-            messages: The messages to get the logits from
-            return_num_tokens: Whether to return the number of tokens
-            **kwargs: Additional keyword arguments
-
-        Returns:
-            Either the logits of the last token of the input messages or a LMOuput object containing the logits and the number of tokens
-        """
-        input_ids = self.tokenizer.apply_chat_template(
-            messages,
-            return_tensors="pt",
-            truncation=self._truncation,
-            max_length=self.max_length,
-        ).to(self.device)
-        with torch.no_grad():
-            outputs = self.model(input_ids, **kwargs)
-            logits = outputs.logits[0, -1, :]
-        if return_num_tokens:
-            num_processed_tokens = input_ids.shape[-1]
-            return LMOuput(
-                text=messages[-1]["content"],
-                logits=logits,
-                num_processed_tokens=num_processed_tokens,
-            )
-        return logits
-
     def loglikelihood(
         self,
         messages: dict[str, str],
@@ -258,6 +243,39 @@ class HFLM(LM):
             )
 
         return loglikelihood
+
+    def logits(
+        self,
+        messages: dict[str, str],
+        return_num_tokens: Optional[bool] = False,
+        **kwargs
+    ) -> torch.Tensor:
+        """Get the logits of the model.
+
+        Args:
+            messages: The messages to get the logits from
+            return_num_tokens: Whether to return the number of tokens
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Either the logits of the last token of the input messages or a LMOuput object containing the logits and the number of tokens
+        """
+        input_ids = self.tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt",
+            truncation=self._truncation,
+            max_length=self.max_length,
+        ).to(self.device)
+        with torch.no_grad():
+            outputs = self.model(input_ids, **kwargs)
+            logits = outputs.logits[0, -1, :].cpu().numpy()
+        if return_num_tokens:
+            num_processed_tokens = input_ids.shape[-1]
+            return LMOuput(
+                logits=logits,
+                num_processed_tokens=num_processed_tokens,
+            )
+        return logits
 
     def _mask_labels(
         self, 

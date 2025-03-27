@@ -67,9 +67,8 @@ class OpenAIClient(LM):
 
         return generated_message
 
-    def loglikelihood(
-        self,
-        messages: List[Dict[str, str]],
-        **kwargs
-    ) -> Union[float, LMOuput]:
+    def loglikelihood(self, **kwargs):
         raise NotImplementedError("OpenAI API does not support loglikelihood calculation")
+
+    def logits(self, **kwargs):
+        raise NotImplementedError("OpenAI API does not support logits calculation for now")

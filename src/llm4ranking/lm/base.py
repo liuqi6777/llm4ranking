@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, Union
 
+import numpy as np
 import torch
 
 
@@ -11,7 +12,7 @@ class LMOuput:
     loglikelihood: Optional[float] = None
     num_processed_tokens: Optional[int] = None
     num_generated_tokens: Optional[int] = None
-    logits: Optional[torch.Tensor] = None
+    logits: Optional[np.ndarray] = None
 
 
 class LM(ABC):
@@ -24,4 +25,8 @@ class LM(ABC):
 
     @abstractmethod
     def loglikelihood(self, messages: dict[str, str], **kwargs) -> Union[float, LMOuput]:
+        pass
+
+    @abstractmethod
+    def logits(self, messages: dict[str, str], **kwargs) -> Union[np.ndarray, LMOuput]:
         pass
