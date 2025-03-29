@@ -24,18 +24,20 @@ class PointwiseDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.samples[idx]
-        query, positive, negative = sample['query'], sample['positive'], sample['negative']
-        if isinstance(positive, str):
-            positive = [positive]
-        elif isinstance(positive, list):
-            positive = random.sample(positive, 1)
-        if isinstance(negative, str):
-            negative = [negative]
-        elif isinstance(negative, list):
-            if len(negative) < self.num_negatives:
-                negative = negative + [""] * (self.num_negatives - len(negative))
-            negative = random.sample(negative, self.num_negatives)
-        docs = positive + negative
+        query = sample['query']
+
+        def get_text(x):
+            if x["title"]:
+                return f"{x['title']} {x['text']}"
+            return x["text"]
+
+        positives = [get_text(x) for x in sample["positive_passages"]]
+        positives = random.sample(positives, 1)
+        negatives = [get_text(x) for x in sample["negative_passages"]]
+        if len(negatives) < self.num_negatives:
+            negatives = negatives + [""] * (self.num_negatives - len(negatives))
+        negatives = random.sample(negatives, self.num_negatives)
+        docs = positives + negatives
         prompts = [PROMPT.format(query=query, document=doc) for doc in docs]
         messages = [[{"role": "user", "content": prompt}] for prompt in prompts]
         return messages
