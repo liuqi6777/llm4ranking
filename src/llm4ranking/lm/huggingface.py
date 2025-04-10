@@ -156,7 +156,7 @@ class HFLM(LM):
 
     def generate(
         self,
-        messages: dict[str, str],
+        messages: list[dict[str, str]],
         return_num_tokens: Optional[bool] = False,
         **kwargs
     ) -> Union[str, LMOuput]:
