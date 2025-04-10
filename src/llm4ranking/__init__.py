@@ -102,15 +102,14 @@ class Reranker:
             model_fw_args = {}
 
         # Merge defaults with user-provided arguments
-        reranking_args = {**default_reranking_args, **reranking_args}
+        args = {**default_reranking_args, **reranking_args, **model_fw_args}
 
         self.ranker = RERANKING_APPROACHES[reranking_approach][0]()
         self.ranking_func = RERANKING_APPROACHES[reranking_approach][1](model_type, model_args, prompt_template)
         self.rerank = partial(
             self.ranker.rerank,
             ranking_func=self.ranking_func,
-            **reranking_args,
-            **model_fw_args
+            **args
         )
 
     def rerank(
