@@ -1,4 +1,5 @@
 import argparse
+import collections
 import datetime
 import json
 import os
@@ -9,7 +10,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 
 from llm4ranking import Reranker
-from llm4ranking.evaluation.trec_eval import trec_eval
+from llm4ranking.evaluation.trec_eval import trec_eval, compute_metrics
 
 
 def simple_evaluate(
@@ -80,6 +81,27 @@ def simple_evaluate(
             results[dataset]["pass" + str(pass_)]["records"] = all_records
 
     return results
+
+
+def evaluate_one_dataset(
+    queries,
+    query_ids,
+    documents,
+    doc_ids,
+    qrels,
+    reranker,
+):
+    run = collections.defaultdict(dict)
+    for query, query_id, one_docs, one_doc_ids in tqdm(zip(queries, query_ids, documents, doc_ids)):
+        _, rerank_indices, *_ = reranker.rerank(
+            query=query,
+            candidates=one_docs,
+            return_indices=True
+        )
+        for rank, indice in enumerate(rerank_indices):
+            run[query_id][one_doc_ids[indice]] = round(1 / (rank + 1), 3)
+    metrics = compute_metrics(qrels, run)
+    return metrics
 
 
 def write_results(rerank_results, file_obj):
