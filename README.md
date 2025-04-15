@@ -67,7 +67,7 @@ python -m llm4ranking.evaluation.evaluator \
 
 ### Supported Datasets
 
-Comming soon.
+Coming soon.
 
 ## Citation
 
