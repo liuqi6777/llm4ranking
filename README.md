@@ -67,7 +67,13 @@ python -m llm4ranking.evaluation.evaluator \
 
 ### Supported Datasets
 
-Coming soon.
+The framework supports the evaluation of the following datasets:
+- TREC DL 2019 and 2020
+- BEIR
+- MAIR
+- BRIGHT
+
+More examples can be found in the `scripts` directory.
 
 ## Citation
 
