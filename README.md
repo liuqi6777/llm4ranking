@@ -29,7 +29,7 @@ reranker.rerank(
 
 ### Supported LLMs
 
-The framework supports both 
+The framework supports both open-source and commercial LLMs. For open-source LLMs, we support Hugging Face Transformers. For commercial LLMs, we support OpenAI and other LLMs that are compatible with the OpenAI API.
 
 ### Supported Reranking Models
 
@@ -74,5 +74,13 @@ Comming soon.
 If you found this repository helpful, please cite the following paper:
 
 ```
-TBD
+@misc{liu2025llm4rankingeasytouseframeworkutilizing,
+      title={LLM4Ranking: An Easy-to-use Framework of Utilizing Large Language Models for Document Reranking}, 
+      author={Qi Liu and Haozhe Duan and Yiqun Chen and Quanfeng Lu and Weiwei Sun and Jiaxin Mao},
+      year={2025},
+      eprint={2504.07439},
+      archivePrefix={arXiv},
+      primaryClass={cs.IR},
+      url={https://arxiv.org/abs/2504.07439}, 
+}
 ```
