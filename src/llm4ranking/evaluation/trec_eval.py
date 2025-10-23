@@ -110,7 +110,7 @@ TOPICS_AND_QRELS = {
 def get_qrels(dataset: str) -> str:
     qrel = collections.defaultdict(dict)
     f_qrel = load_dataset(
-        "liuqi6777/pyserini_retrieval_results",
+        "liuqi6777/retrieval_results",
         data_files=f"topics_and_qrels/qrels.{TOPICS_AND_QRELS[dataset]}.txt",
         split="train"
     )["text"]
