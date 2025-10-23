@@ -1,6 +1,6 @@
 from typing import Union
 
-from llm4ranking.lm.base import LMOuput
+from llm4ranking.lm.base import LMOutput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -44,7 +44,7 @@ class QueryGeneration(BaseRankingModel):
         ]
         return messages
 
-    def __call__(self, query: str, doc: str, return_lm_outputs: bool = False) -> Union[float, tuple[float, LMOuput]]:
+    def __call__(self, query: str, doc: str, return_lm_outputs: bool = False) -> Union[float, tuple[float, LMOutput]]:
         """Score a document by measuring how well it generates the target query.
 
         This method uses the language model's likelihood of generating the original query
@@ -56,7 +56,7 @@ class QueryGeneration(BaseRankingModel):
             return_lm_outputs (bool, optional): Whether to return LM outputs. Defaults to False.
 
         Returns:
-            Union[float, tuple[float, LMOuput]]:
+            Union[float, tuple[float, LMOutput]]:
                 Returns the log likelihood score of generating the query.
                 If return_lm_outputs is True, also returns the LM outputs.
         """

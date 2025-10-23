@@ -40,14 +40,12 @@ def get_default_args_by_approach(approach: str) -> Dict:
     defaults = {
         "rankgpt": {
             "window_size": 20, "step": 10, "truncate_length": 300,
-            "do_sample": False, "max_new_tokens": 120
         },
         "rel-gen": {},
         "query-gen": {},
         "prp": {"topk": 10},
         "tourrank": {
             "tuornament_times": 1, "truncate_length": 300,
-            "do_sample": False, "max_new_tokens": 120
         },
         "first": {
             "window_size": 20, "step": 10, "truncate_length": 300,

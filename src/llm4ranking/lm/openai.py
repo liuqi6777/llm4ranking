@@ -2,7 +2,7 @@ import os
 from typing import Optional, Union, List, Dict
 
 from openai import OpenAI
-from llm4ranking.lm.base import LM, LMOuput
+from llm4ranking.lm.base import LM, LMOutput
 
 
 class OpenAIClient(LM):
@@ -44,7 +44,7 @@ class OpenAIClient(LM):
         messages: List[Dict[str, str]],
         return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> Union[str, LMOuput]:
+    ) -> Union[str, LMOutput]:
         
         response = self.client.chat.completions.create(
             model=self.model,
@@ -59,7 +59,7 @@ class OpenAIClient(LM):
             num_processed_tokens = response.usage.prompt_tokens
             num_generated_tokens = response.usage.completion_tokens
 
-            return LMOuput(
+            return LMOutput(
                 text=generated_message,
                 num_processed_tokens=num_processed_tokens,
                 num_generated_tokens=num_generated_tokens,

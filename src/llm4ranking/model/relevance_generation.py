@@ -1,6 +1,6 @@
 from typing import Union
 
-from llm4ranking.lm.base import LMOuput
+from llm4ranking.lm.base import LMOutput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -41,11 +41,11 @@ class RelevanceGeneration(BaseRankingModel):
         """
         messages = [
             {"role": "user", "content": self.prompt_template.render(doc=doc, query=query)},
-            {"role": "assistant", "content": " Yes"}
+            # {"role": "assistant", "content": "yes"}
         ]
         return messages
 
-    def __call__(self, query: str, doc: str, return_lm_outputs: bool = False) -> Union[float, tuple[float, LMOuput]]:
+    def __call__(self, query: str, doc: str, return_lm_outputs: bool = False) -> Union[float, tuple[float, LMOutput]]:
         """Score a document based on its relevance to the query.
 
         Args:
@@ -54,15 +54,15 @@ class RelevanceGeneration(BaseRankingModel):
             return_lm_outputs (bool, optional): Whether to return LM outputs. Defaults to False.
 
         Returns:
-            Union[float, tuple[float, LMOuput]]:
+            Union[float, tuple[float, LMOutput]]:
                 Returns a relevance score (log likelihood of "Yes" response).
                 If return_lm_outputs is True, also returns the LM outputs.
         """
         messages = self.create_messages(query, doc)
-        lm_outputs = self.lm.loglikelihood(messages, return_num_tokens=True)
+        lm_outputs = self.lm.logits(messages, token="yes", return_num_tokens=True)
         if return_lm_outputs:
-            return lm_outputs.loglikelihood, lm_outputs
-        return lm_outputs.loglikelihood
+            return lm_outputs.logits, lm_outputs
+        return lm_outputs.logits
 
 
 class FineGrainedRelevanceGeneration(RelevanceGeneration):

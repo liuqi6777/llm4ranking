@@ -1,7 +1,7 @@
 import re
 from typing import Union
 
-from llm4ranking.lm.base import LMOuput
+from llm4ranking.lm.base import LMOutput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -32,7 +32,7 @@ class RankGPT(BaseRankingModel):
         candidates: list[str],
         return_lm_outputs: bool = False,
         **kwargs
-    ) -> Union[list[int], tuple[list[int], LMOuput]]:
+    ) -> Union[list[int], tuple[list[int], LMOutput]]:
         """Generate a ranking for the candidate documents.
 
         Args:
@@ -42,7 +42,7 @@ class RankGPT(BaseRankingModel):
             **kwargs: Additional arguments passed to the LM
 
         Returns:
-            Union[list[int], tuple[list[int], LMOuput]]: 
+            Union[list[int], tuple[list[int], LMOutput]]: 
                 Either just the ranking permutation or both the permutation and LM outputs
         """
         messages = self.create_messages(query, candidates)

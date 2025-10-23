@@ -24,6 +24,7 @@ def simple_evaluate(
     model_fw_args: dict = {},
     prompt_template: str = None,
     num_passes: int = 1,
+    return_record: bool = False,
     output_dir: str = None,
 ):
     reranker = Reranker(
@@ -42,7 +43,21 @@ def simple_evaluate(
         os.makedirs(output_dir, exist_ok=True)
 
     for dataset in datasets:
-        data = load_dataset("liuqi6777/pyserini_retrieval_results", data_files=f"{retriever}/{dataset}_top{topk}.jsonl", split="train")
+        try:
+            data = load_dataset("liuqi6777/pyserini_retrieval_results", data_files=f"{retriever}/{dataset}_top{topk}.jsonl", split="train").to_list()
+        except:
+            try:
+                data = load_dataset(
+                    "json",
+                    data_files=f"/mnt/workspace/liuqi/datasets/pyserini_retrieval_results/{retriever}/{dataset}_top{topk}.jsonl", 
+                    split="train"
+                ).to_list()
+            except:
+                data = load_dataset(
+                    "json",
+                    data_files=f"/mnt/workspace/liuqi/unirank/results/retrieval/{retriever}/{dataset}_top{topk}.jsonl", 
+                    split="train"
+                ).to_list()
         results[dataset] = {}
 
         prev_results = data
@@ -50,17 +65,18 @@ def simple_evaluate(
             rerank_results = []
             all_records = []
             for i in tqdm(range(len(prev_results))):
-                _, rerank_indices, record = reranker.rerank(
+                _, rerank_indices, *record = reranker.rerank(
                     query=prev_results[i]["query"],
                     candidates=[x["content"] for x in prev_results[i]["hits"]],
-                    return_record=True,
+                    return_record=return_record,
                     return_indices=True
                 )
                 rerank_results.append({
                     "query": prev_results[i]["query"],
                     "hits": [prev_results[i]["hits"][j] for j in rerank_indices]
                 })
-                all_records.append(asdict(record))
+                if return_record:
+                    all_records.append(record)
             prev_results = rerank_results
 
             if output_dir is not None:
@@ -123,26 +139,15 @@ def parse_dict_args(args_string: str):
     return args
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_type", type=str, required=True)
-    parser.add_argument("--model_args", type=parse_dict_args, required=True)
-    parser.add_argument("--reranking_approach", type=str, required=True)
-    parser.add_argument("--datasets", nargs="+", required=True)
-    parser.add_argument("--retriever", type=str, default="bm25")
-    parser.add_argument("--topk", type=int, default=100)
-    parser.add_argument("--reranking_args", type=parse_dict_args, default={})
-    parser.add_argument("--model_fw_args", type=parse_dict_args, default={})
-    parser.add_argument("--prompt_template", type=str, default=None)
-    parser.add_argument("--num_passes", type=int, default=1)
-    parser.add_argument("--output_dir", type=str, default=None)
-    args = parser.parse_args()
-    print(args)
-
+def main(args):
     if args.output_dir is None:
         output_dir = os.path.join("results", "runs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
     else:
         output_dir = args.output_dir
+    if os.path.exists(os.path.join(output_dir, "results.json")) and not args.overwrite:
+        print(f"Results exist in {output_dir}, pass...")
+        return
+
     os.makedirs(output_dir, exist_ok=True)
 
     with open(os.path.join(output_dir, "cli_args.json"), "w") as f:
@@ -159,9 +164,32 @@ if __name__ == "__main__":
         model_fw_args=args.model_fw_args,
         prompt_template=args.prompt_template,
         num_passes=args.num_passes,
+        return_record=args.return_record,
         output_dir=output_dir
     )
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:
         json.dump(results, f, indent=4, default=str)
     print(f"Results saved to {output_dir}")
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_type", type=str, required=True)
+    parser.add_argument("--model_args", type=parse_dict_args, required=True)
+    parser.add_argument("--reranking_approach", type=str, required=True)
+    parser.add_argument("--datasets", nargs="+", required=True)
+    parser.add_argument("--retriever", type=str, default="bm25")
+    parser.add_argument("--topk", type=int, default=100)
+    parser.add_argument("--reranking_args", type=parse_dict_args, default={})
+    parser.add_argument("--model_fw_args", type=parse_dict_args, default={})
+    parser.add_argument("--prompt_template", type=str, default=None)
+    parser.add_argument("--num_passes", type=int, default=1)
+    parser.add_argument("--return_record", default=False, action="store_true")
+    parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--overwrite", default=False, action="store_true")
+    args = parser.parse_args()
+    print(args)
+
+    main(args)

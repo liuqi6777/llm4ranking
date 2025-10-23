@@ -25,6 +25,16 @@ INDEX = {
         'nq': 'beir-v1.0.0-nq.flat',
         'cfever': 'beir-v1.0.0-climate-fever.flat',
         'hotpotqa': 'beir-v1.0.0-hotpotqa.flat',
+        'mrtydi-ar': 'mrtydi-v1.1-arabic',
+        'mrtydi-bn': 'mrtydi-v1.1-bengali',
+        'mrtydi-fi': 'mrtydi-v1.1-finnish',
+        'mrtydi-id': 'mrtydi-v1.1-indonesian',
+        'mrtydi-ja': 'mrtydi-v1.1-japanese',
+        'mrtydi-ko': 'mrtydi-v1.1-korean',
+        'mrtydi-ru': 'mrtydi-v1.1-russian',
+        'mrtydi-sw': 'mrtydi-v1.1-swahili',
+        'mrtydi-te': 'mrtydi-v1.1-telugu',
+        'mrtydi-th': 'mrtydi-v1.1-thai',
     },
     'splade++ed': {
         'dl19': 'msmarco-v1-passage-splade-pp-ed-text',
@@ -44,13 +54,14 @@ INDEX = {
         'signal': 'beir-v1.0.0-signal1m.splade-pp-ed',
         'nq': 'beir-v1.0.0-nq.splade-pp-ed',
         'cfever': 'beir-v1.0.0-climate-fever.splade-pp-ed',
-        'hotpotqa': 'beir-v1.0.0-hotpotqa.splade-pp-ed'
+        'hotpotqa': 'beir-v1.0.0-hotpotqa.splade-pp-ed',
     },
 }
 
 TOPICS_AND_QRELS = {
     'dl19': 'dl19-passage',
     'dl20': 'dl20-passage',
+    # BEIR
     'covid': 'beir-v1.0.0-trec-covid.test',
     'arguana': 'beir-v1.0.0-arguana.test',
     'touche': 'beir-v1.0.0-webis-touche2020.test',
@@ -67,6 +78,32 @@ TOPICS_AND_QRELS = {
     'nq': 'beir-v1.0.0-nq.test',
     'cfever': 'beir-v1.0.0-climate-fever.test',
     'hotpotqa': 'beir-v1.0.0-hotpotqa.test',
+    # Mr.Tydi
+    'mrtydi-ar': 'mrtydi-v1.1-ar.test',
+    'mrtydi-bn': 'mrtydi-v1.1-bn.test',
+    'mrtydi-fi': 'mrtydi-v1.1-fi.test',
+    'mrtydi-id': 'mrtydi-v1.1-id.test',
+    'mrtydi-ja': 'mrtydi-v1.1-ja.test',
+    'mrtydi-ko': 'mrtydi-v1.1-ko.test',
+    'mrtydi-ru': 'mrtydi-v1.1-ru.test',
+    'mrtydi-sw': 'mrtydi-v1.1-sw.test',
+    'mrtydi-te': 'mrtydi-v1.1-te.test',
+    'mrtydi-th': 'mrtydi-v1.1-th.test',
+    # BRIGHT
+    'bright-biology': 'bright-biology.test',
+    'bright-earth-science': 'bright-earth-science.test',
+    'bright-economics': 'bright-economics.test',
+    'bright-psychology': 'bright-psychology.test',
+    'bright-robotics': 'bright-robotics.test',
+    'bright-stackoverflow': 'bright-stackoverflow.test',
+    'bright-sustainable-living': 'bright-sustainable-living.test',
+    'bright-pony': 'bright-pony.test',
+    'bright-leetcode': 'bright-leetcode.test',
+    'bright-aops': 'bright-aops.test',
+    'bright-theoremqa-theorems': 'bright-theoremqa-theorems.test',
+    'bright-theoremqa-questions': 'bright-theoremqa-questions.test',
+    # BrowseComp-Plus
+    "browsecomp-plus": "browsecomp-plus.test",
 }
 
 
@@ -127,9 +164,22 @@ def compute_metrics(
     return all_metrics
 
 
-def trec_eval(dataset, ranking, print_metrics=True):
+def filter_run(run, excluded_ids):
+    new_run = collections.defaultdict(dict)
+    for qid in run.keys():
+        for docid, score in run[qid].items():
+            if docid in excluded_ids.get(qid, ["N/A"]) and docid != "N/A":
+                continue
+            else:
+                new_run[qid][docid] = score
+    return new_run
+
+
+def trec_eval(dataset, ranking, excluded_ids=None, print_metrics=True):
     with open(ranking, 'r') as f_run:
         run = pytrec_eval.parse_run(f_run)
+    if excluded_ids is not None:
+        run = filter_run(run, excluded_ids)
     qrels = get_qrels(dataset)
     all_metrics = compute_metrics(qrels, run, k_values=(1, 5, 10, 20, 100))
     if print_metrics:

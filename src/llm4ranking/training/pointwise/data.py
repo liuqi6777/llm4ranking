@@ -26,18 +26,26 @@ class PointwiseDataset(Dataset):
         sample = self.samples[idx]
         query = sample['query']
 
-        def get_text(x):
-            if x["title"]:
-                return f"{x['title']} {x['text']}"
-            return x["text"]
-
-        positives = [get_text(x) for x in sample["positive_passages"]]
-        positives = random.sample(positives, 1)
-        negatives = [get_text(x) for x in sample["negative_passages"]]
+        positives = sample["positive"]
+        negatives = sample["negative"]
         if len(negatives) < self.num_negatives:
             negatives = negatives + [""] * (self.num_negatives - len(negatives))
         negatives = random.sample(negatives, self.num_negatives)
-        docs = positives + negatives
+        docs = [positives] + negatives
+
+        # def get_text(x):
+        #     if x["title"]:
+        #         return f"{x['title']} {x['text']}"
+        #     return x["text"]
+
+        # positives = [get_text(x) for x in sample["positive_passages"]]
+        # positives = random.sample(positives, 1)
+        # negatives = [get_text(x) for x in sample["negative_passages"]]
+        # if len(negatives) < self.num_negatives:
+        #     negatives = negatives + [""] * (self.num_negatives - len(negatives))
+        # negatives = random.sample(negatives, self.num_negatives)
+        # docs = positives + negatives
+
         prompts = [PROMPT.format(query=query, document=doc) for doc in docs]
         messages = [[{"role": "user", "content": prompt}] for prompt in prompts]
         return messages

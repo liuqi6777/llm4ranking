@@ -54,7 +54,7 @@ class TrainingArguments(HFTrainingArguments):
 
 @dataclass
 class LoraArguments:
-    lora_enable: bool = field(
+    lora_enabled: bool = field(
         default=False,
         metadata={"help": "Enable LoRA training"}
     )
@@ -71,7 +71,7 @@ class LoraArguments:
         metadata={"help": "LoRA dropout probability"}
     )
     lora_target_modules: list[str] = field(
-        default_factory=lambda: ["q_proj", "v_proj"],
+        default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj"],
         metadata={"help": "Target modules for LoRA adaptation"}
     )
     lora_bias: str = field(

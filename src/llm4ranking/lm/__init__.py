@@ -10,5 +10,11 @@ def load_model(
         return HFLM(**model_args)
     elif model_type == "openai":
         return OpenAIClient(**model_args)
+    elif model_type == "vllm":
+        try:
+            from llm4ranking.lm.vllm import VLLM
+        except:
+            raise RuntimeError
+        return VLLM(**model_args)
     else:
         raise ValueError(f"Model type {model_type} is not supported.")

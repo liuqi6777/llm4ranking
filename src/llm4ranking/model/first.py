@@ -1,6 +1,6 @@
 from typing import Union
 
-from llm4ranking.lm.base import LMOuput
+from llm4ranking.lm.base import LMOutput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -28,7 +28,7 @@ class First(BaseRankingModel):
         candidates: list[str],
         return_lm_outputs: bool = False,
         **kwargs
-    ) -> Union[list[int], tuple[list[int], LMOuput]]:
+    ) -> Union[list[int], tuple[list[int], LMOutput]]:
         """Rank the candidaes using logit scores.
 
         Args:

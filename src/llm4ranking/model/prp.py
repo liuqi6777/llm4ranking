@@ -1,6 +1,6 @@
 from typing import Union
 
-from llm4ranking.lm.base import LMOuput
+from llm4ranking.lm.base import LMOutput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -33,7 +33,7 @@ class PRP(BaseRankingModel):
         doc2: str,
         return_lm_outputs: bool = False,
         **kwargs,
-    ) -> Union[int, tuple[int, LMOuput]]:
+    ) -> Union[int, tuple[int, LMOutput]]:
         """Compare two documents and determine which is more relevant.
 
         Args:
@@ -44,7 +44,7 @@ class PRP(BaseRankingModel):
             **kwargs: Additional arguments passed to the LM
 
         Returns:
-            Union[int, tuple[int, LMOuput]]: 
+            Union[int, tuple[int, LMOutput]]: 
                 Returns 1 if doc1 is more relevant, -1 if doc2 is more relevant, 0 if tied.
                 If return_lm_outputs is True, also returns the LM outputs.
         """

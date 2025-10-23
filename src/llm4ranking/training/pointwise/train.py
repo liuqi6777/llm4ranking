@@ -5,6 +5,7 @@ from transformers import (
     HfArgumentParser,
     Trainer,
 )
+from peft import LoraConfig, get_peft_model
 from llm4ranking.training.pointwise.arguments import (
     DataArguments,
     LoraArguments,
@@ -19,6 +20,17 @@ def get_model(model_args, lora_args):
         model_args.model_name_or_path,
         trust_remote_code=model_args.trust_remote_code
     )
+    if lora_args.lora_enabled:
+        lora_config = LoraConfig(
+            r=lora_args.lora_r,
+            lora_alpha=lora_args.lora_alpha,
+            target_modules=lora_args.lora_target_modules,
+            lora_dropout=lora_args.lora_dropout,
+            bias=lora_args.lora_bias,
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
     return model
 
 
@@ -31,10 +43,12 @@ def main():
     ))
     model_args, data_args, training_args, lora_args = parser.parse_args_into_dataclasses()
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, padding_side="left")
+    tokenizer.pad_token = tokenizer.eos_token
     yes_loc = tokenizer.encode("yes")[0]
 
     model = get_model(model_args, lora_args)
+    model.train()
 
     data_module = make_data_module(tokenizer, data_args)
     train_dataset = data_module['train_dataset']

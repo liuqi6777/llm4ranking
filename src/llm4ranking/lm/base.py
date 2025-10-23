@@ -7,7 +7,7 @@ import torch
 
 
 @dataclass
-class LMOuput:
+class LMOutput:
     text: Optional[str] = None
     loglikelihood: Optional[float] = None
     num_processed_tokens: Optional[int] = None
@@ -20,13 +20,13 @@ class LM(ABC):
         pass
 
     @abstractmethod
-    def generate(self, messages: dict[str, str], **kwargs) -> Union[str, LMOuput]:
+    def generate(self, messages: dict[str, str], **kwargs) -> Union[str, LMOutput]:
         pass
 
     @abstractmethod
-    def loglikelihood(self, messages: dict[str, str], **kwargs) -> Union[float, LMOuput]:
+    def loglikelihood(self, messages: dict[str, str], **kwargs) -> Union[float, LMOutput]:
         pass
 
     @abstractmethod
-    def logits(self, messages: dict[str, str], **kwargs) -> Union[np.ndarray, LMOuput]:
+    def logits(self, messages: dict[str, str], **kwargs) -> Union[np.ndarray, LMOutput]:
         pass

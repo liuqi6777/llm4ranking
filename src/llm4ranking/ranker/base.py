@@ -6,7 +6,7 @@ from typing import Optional, Callable, Any, Union, List
 from itertools import combinations
 from dataclasses import dataclass, field
 
-from llm4ranking.lm.base import LMOuput
+from llm4ranking.lm.base import LMOutput
 
 
 @dataclass
@@ -21,7 +21,7 @@ class RankingRecord:
     num_generated_tokens: Optional[int] = None
     latency: Optional[float] = None
 
-    lm_outputs: list[LMOuput] = field(default_factory=list)
+    lm_outputs: list[LMOutput] = field(default_factory=list)
 
     rank_indices: Optional[list[int]] = None
 

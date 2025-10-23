@@ -3,7 +3,7 @@ import transformers
 from typing import Optional, Union
 from peft import PeftModel
 
-from llm4ranking.lm.base import LM, LMOuput
+from llm4ranking.lm.base import LM, LMOutput
 
 
 class HFLM(LM):
@@ -159,7 +159,7 @@ class HFLM(LM):
         messages: list[dict[str, str]],
         return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> Union[str, LMOuput]:
+    ) -> Union[str, LMOutput]:
         """Generate text from the model.
 
         Args:
@@ -168,7 +168,7 @@ class HFLM(LM):
             **kwargs: Additional keyword arguments
 
         Returns:
-            Either the generated text or a LMOuput object containing the text and the number of tokens
+            Either the generated text or a LMOutput object containing the text and the number of tokens
         """
         max_new_tokens = kwargs.pop("max_new_tokens", self.max_new_tokens)
         if "do_sample" in kwargs and kwargs["do_sample"] is False:
@@ -181,6 +181,7 @@ class HFLM(LM):
             return_tensors="pt",
             truncation=self._truncation,
             max_length=self.max_length - max_new_tokens,
+            enable_thinking=False
         ).to(self.device)
         with torch.no_grad():
             outputs = self.model.generate(
@@ -196,7 +197,7 @@ class HFLM(LM):
             num_processed_tokens = input_ids.shape[-1]
             num_generated_tokens = outputs.shape[-1]
 
-            return LMOuput(
+            return LMOutput(
                 text=output_text,
                 num_processed_tokens=num_processed_tokens,
                 num_generated_tokens=num_generated_tokens,
@@ -209,7 +210,7 @@ class HFLM(LM):
         messages: dict[str, str],
         return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> Union[float, LMOuput]:
+    ) -> Union[float, LMOutput]:
         """Get the loglikelihood of the model.
 
         Args:
@@ -218,7 +219,7 @@ class HFLM(LM):
             **kwargs: Additional keyword arguments
 
         Returns:
-            Either the loglikelihood or a LMOuput object containing the loglikelihood and the number of tokens
+            Either the loglikelihood or a LMOutput object containing the loglikelihood and the number of tokens
         """
         assert messages[-1]["role"] == "assistant", "Last message must be from the assistant"
         assert len([m for m in messages if m["role"] == "assistant"]) == 1, "Only one assistant message allowed"
@@ -240,7 +241,7 @@ class HFLM(LM):
         if return_num_tokens:
             num_processed_tokens = input_ids.shape[-1]
 
-            return LMOuput(
+            return LMOutput(
                 text=messages[-1]["content"],
                 loglikelihood=loglikelihood,
                 num_processed_tokens=num_processed_tokens,
@@ -251,6 +252,7 @@ class HFLM(LM):
     def logits(
         self,
         messages: dict[str, str],
+        token: Optional[str] = None,
         return_num_tokens: Optional[bool] = False,
         **kwargs
     ) -> torch.Tensor:
@@ -262,7 +264,7 @@ class HFLM(LM):
             **kwargs: Additional keyword arguments
 
         Returns:
-            Either the logits of the last token of the input messages or a LMOuput object containing the logits and the number of tokens
+            Either the logits of the last token of the input messages or a LMOutput object containing the logits and the number of tokens
         """
         input_ids = self.tokenizer.apply_chat_template(
             messages,
@@ -274,9 +276,12 @@ class HFLM(LM):
         with torch.no_grad():
             outputs = self.model(input_ids, **kwargs)
             logits = outputs.logits[0, -1, :].detach().float().cpu().numpy()
+        if token:
+            token_id = self.tokenizer.convert_tokens_to_ids(token)
+            logits = logits[token_id]
         if return_num_tokens:
             num_processed_tokens = input_ids.shape[-1]
-            return LMOuput(
+            return LMOutput(
                 logits=logits,
                 num_processed_tokens=num_processed_tokens,
             )
