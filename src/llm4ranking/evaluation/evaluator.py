@@ -5,12 +5,89 @@ import json
 import os
 import tempfile
 from dataclasses import asdict
-from functools import partial
 from tqdm import tqdm
 from datasets import load_dataset
 
 from llm4ranking import Reranker
 from llm4ranking.evaluation.trec_eval import trec_eval, compute_metrics
+
+
+def evaluate(
+    rerank,
+    datasets: list[str],
+    retriever: str = "bm25",
+    topk: int = 100,
+    max_samples: int = None,
+    output_dir: str = None,
+):
+
+    results = {}
+    results["output_dir"] = output_dir
+
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
+
+    for dataset in datasets:
+        try:
+            print(f"Evaluating dataset {dataset}...")
+            
+            data = load_dataset("liuqi6777/retrieval_results", data_files=f"{retriever}/{dataset}_top{topk}.jsonl", split="train").to_list()
+
+            results[dataset] = {}
+            if max_samples is not None:
+                data = data[:max_samples]
+
+            if dataset.startswith("bright"):
+                task_name = dataset.removeprefix("bright-").replace("-", "_")
+                examples = load_dataset('xlangai/bright', 'examples')[task_name]
+                excluded_ids = {}
+                for e in examples:
+                    excluded_ids[e['id']] = e['excluded_ids']
+            else:
+                excluded_ids = None
+
+            rerank_results = []
+            records = []
+            for i in tqdm(range(len(data))):
+                _, rerank_indices, outputs = rerank(
+                    query=data[i]["query"],
+                    candidates=[x["content"] for x in data[i]["hits"]],
+                    return_indices=True,
+                    return_record=True
+                )
+                rerank_results.append({
+                    "query": data[i]["query"],
+                    "hits": [data[i]["hits"][j] for j in rerank_indices]
+                })
+                records.append(asdict(outputs))
+
+            if output_dir is not None:
+                os.makedirs(output_dir, exist_ok=True)
+                output_file = os.path.join(
+                    output_dir,
+                    f"eval_{dataset}_top{topk}.txt"
+                )
+                with open(output_file, "w") as f:
+                    write_results(rerank_results, f)
+                records_file = os.path.join(
+                    output_dir,
+                    f"records_{dataset}_top{topk}.json"
+                )
+                metrics = trec_eval(dataset, output_file, excluded_ids)
+                with open(records_file, "w") as f:
+                    json.dump(records, f, indent=4, ensure_ascii=False)
+            else:
+                with tempfile.NamedTemporaryFile("w") as f:
+                    write_results(rerank_results, f)
+                    f.flush()
+                    metrics = trec_eval(dataset, f.name, excluded_ids)
+
+            results[dataset] = {}
+            results[dataset]["metrics"] = metrics
+        except Exception as e:
+            raise e
+
+    return results
 
 
 def simple_evaluate(
@@ -23,8 +100,6 @@ def simple_evaluate(
     reranking_args: dict = {},
     model_fw_args: dict = {},
     prompt_template: str = None,
-    num_passes: int = 1,
-    return_record: bool = False,
     output_dir: str = None,
 ):
     reranker = Reranker(
@@ -37,66 +112,13 @@ def simple_evaluate(
         model_fw_args=model_fw_args,
     )
 
-    results = {}
-
-    if output_dir is not None:
-        os.makedirs(output_dir, exist_ok=True)
-
-    for dataset in datasets:
-        try:
-            data = load_dataset("liuqi6777/pyserini_retrieval_results", data_files=f"{retriever}/{dataset}_top{topk}.jsonl", split="train").to_list()
-        except:
-            try:
-                data = load_dataset(
-                    "json",
-                    data_files=f"/mnt/workspace/liuqi/datasets/pyserini_retrieval_results/{retriever}/{dataset}_top{topk}.jsonl", 
-                    split="train"
-                ).to_list()
-            except:
-                data = load_dataset(
-                    "json",
-                    data_files=f"/mnt/workspace/liuqi/unirank/results/retrieval/{retriever}/{dataset}_top{topk}.jsonl", 
-                    split="train"
-                ).to_list()
-        results[dataset] = {}
-
-        prev_results = data
-        for pass_ in range(num_passes):
-            rerank_results = []
-            all_records = []
-            for i in tqdm(range(len(prev_results))):
-                _, rerank_indices, *record = reranker.rerank(
-                    query=prev_results[i]["query"],
-                    candidates=[x["content"] for x in prev_results[i]["hits"]],
-                    return_record=return_record,
-                    return_indices=True
-                )
-                rerank_results.append({
-                    "query": prev_results[i]["query"],
-                    "hits": [prev_results[i]["hits"][j] for j in rerank_indices]
-                })
-                if return_record:
-                    all_records.append(record)
-            prev_results = rerank_results
-
-            if output_dir is not None:
-                output_file = os.path.join(
-                    output_dir,
-                    f"eval_{dataset}_top{topk}_pass{pass_}.txt"
-                )
-                with open(output_file, "w") as f:
-                    write_results(rerank_results, f)
-                metrics = trec_eval(dataset, output_file)
-            else:
-                with tempfile.NamedTemporaryFile("w") as f:
-                    write_results(rerank_results, f)
-                    metrics = trec_eval(dataset, f.name)
-
-            results[dataset]["pass" + str(pass_)] = {}
-            results[dataset]["pass" + str(pass_)]["metrics"] = metrics
-            results[dataset]["pass" + str(pass_)]["records"] = all_records
-
-    return results
+    return evaluate(
+        reranker.rerank,
+        datasets=datasets,
+        retriever=retriever,
+        topk=topk,
+        output_dir=output_dir
+    )
 
 
 def evaluate_one_dataset(
@@ -163,8 +185,6 @@ def main(args):
         reranking_args=args.reranking_args,
         model_fw_args=args.model_fw_args,
         prompt_template=args.prompt_template,
-        num_passes=args.num_passes,
-        return_record=args.return_record,
         output_dir=output_dir
     )
 
@@ -185,7 +205,6 @@ if __name__ == "__main__":
     parser.add_argument("--reranking_args", type=parse_dict_args, default={})
     parser.add_argument("--model_fw_args", type=parse_dict_args, default={})
     parser.add_argument("--prompt_template", type=str, default=None)
-    parser.add_argument("--num_passes", type=int, default=1)
     parser.add_argument("--return_record", default=False, action="store_true")
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--overwrite", default=False, action="store_true")

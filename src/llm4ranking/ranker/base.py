@@ -1,6 +1,7 @@
 import copy
 import random
 import time
+import math
 from abc import ABC, abstractmethod
 from typing import Optional, Callable, Any, Union, List
 from itertools import combinations
@@ -17,8 +18,6 @@ class RankingRecord:
 
     prompt_template: Optional[str] = None
     num_processed_docs: Optional[int] = None
-    num_processed_tokens: Optional[int] = None
-    num_generated_tokens: Optional[int] = None
     latency: Optional[float] = None
 
     lm_outputs: list[LMOutput] = field(default_factory=list)
@@ -56,7 +55,6 @@ class PointwiseReranker(Reranker):
             record = RankingRecord(
                 query=query,
                 num_processed_docs=len(candidates),
-                num_processed_tokens=0,
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
@@ -68,10 +66,7 @@ class PointwiseReranker(Reranker):
         for candidate in candidates:
             if return_record:
                 loglikelihood, lm_outputs = ranking_func(query, candidate, return_lm_outputs=True, **kwargs)
-                record.num_processed_tokens += lm_outputs.num_processed_tokens
                 record.lm_outputs.append(lm_outputs)
-                if lm_outputs.num_generated_tokens is not None:
-                    record.num_generated_tokens += lm_outputs.num_generated_tokens
             else:
                 loglikelihood = ranking_func(query, candidate, **kwargs)
             loglikelihoods.append(loglikelihood)
@@ -108,8 +103,6 @@ class PairwiseAllPairReranker(Reranker):
             record = RankingRecord(
                 query=query,
                 num_processed_docs=len(candidates),
-                num_processed_tokens=0,
-                num_generated_tokens=0,
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
@@ -120,10 +113,8 @@ class PairwiseAllPairReranker(Reranker):
 
             if return_record:
                 res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
-                record.num_processed_tokens += lm_outputs.num_processed_tokens
-                if lm_outputs.num_generated_tokens is not None:
-                    record.num_generated_tokens += lm_outputs.num_generated_tokens
                 record.num_processed_docs += 4
+                record.lm_outputs.append(lm_outputs)
             else:
                 res = ranking_func(query, candidates[i], candidates[j], **kwargs)
 
@@ -165,8 +156,6 @@ class PairwiseBubbleSortReranker(Reranker):
             record = RankingRecord(
                 query=query,
                 num_processed_docs=len(candidates),
-                num_processed_tokens=0,
-                num_generated_tokens=0,
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
@@ -179,10 +168,8 @@ class PairwiseBubbleSortReranker(Reranker):
 
                 if return_record:
                     res, lm_outputs = ranking_func(query, candidates[j], candidates[j - 1], return_lm_outputs=True, **kwargs)
-                    record.num_processed_tokens += lm_outputs.num_processed_tokens
-                    if lm_outputs.num_generated_tokens is not None:
-                        record.num_generated_tokens += lm_outputs.num_generated_tokens
                     record.num_processed_docs += 4
+                    record.lm_outputs.append(lm_outputs)
                 else:
                     res = ranking_func(query, candidates[j], candidates[j - 1], **kwargs)
 
@@ -224,8 +211,6 @@ class PairwiseHeapSortReranker(Reranker):
             record = RankingRecord(
                 query=query,
                 num_processed_docs=0,
-                num_processed_tokens=0,
-                num_generated_tokens=0,
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
@@ -235,10 +220,8 @@ class PairwiseHeapSortReranker(Reranker):
         def wrapped_ranking_func(i, j):
             if return_record:
                 res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
-                record.num_processed_tokens += lm_outputs.num_processed_tokens
-                if lm_outputs.num_generated_tokens is not None:
-                    record.num_generated_tokens += lm_outputs.num_generated_tokens
                 record.num_processed_docs += 4
+                record.lm_outputs.append(lm_outputs)
             else:
                 res = ranking_func(query, candidates[i], candidates[j], **kwargs)
             return res
@@ -298,8 +281,6 @@ class ListwiseSilidingWindowReranker(Reranker):
             record = RankingRecord(
                 query=query,
                 num_processed_docs=0,
-                num_processed_tokens=0,
-                num_generated_tokens=0,
                 prompt_template=ranking_func._prompt_template,
             )
         t = time.time()
@@ -320,9 +301,6 @@ class ListwiseSilidingWindowReranker(Reranker):
             if return_record:
                 permutation, lm_outputs = ranking_func(query, ranked_result[start_pos:end_pos], return_lm_outputs=True, **kwargs)
                 record.num_processed_docs += (end_pos - start_pos)
-                record.num_processed_tokens += lm_outputs.num_processed_tokens
-                if lm_outputs.num_generated_tokens is not None:
-                    record.num_generated_tokens += lm_outputs.num_generated_tokens
                 record.lm_outputs.append(lm_outputs)
             else:
                 permutation = ranking_func(query, ranked_result[start_pos:end_pos], **kwargs)
@@ -353,8 +331,9 @@ class TournamentReranker(Reranker):
         candidates: list[str],
         ranking_func: Callable[[str, str], float],
         tuornament_times: int = 1,
-        group_sizes: tuple[int] = (20, 10, 20, 10, 5),
-        promotion_sizes: tuple[int] = (10, 4, 10, 5, 1),
+        group_sizes: tuple[int] = (10, 10, 20, 10, 5),
+        promotion_sizes: tuple[int] = (5, 4, 10, 5, 2),
+        stage_weight: float = 0.,
         truncate_length: Optional[int] = None,
         return_record: bool = False, 
         return_indices: bool = False,
@@ -365,8 +344,6 @@ class TournamentReranker(Reranker):
             record = RankingRecord(
                 query=query,
                 num_processed_docs=0,
-                num_processed_tokens=0,
-                num_generated_tokens=0,
                 prompt_template=ranking_func._prompt_template,
             )
         t = time.time()
@@ -382,35 +359,39 @@ class TournamentReranker(Reranker):
         stage_ids = list(range(len(candidates)))
 
         for _ in range(tuornament_times):
-            for group_size, promotion_size in zip(group_sizes, promotion_sizes):
-                assert group_size > promotion_size and len(stage_ids) % group_size == 0
+            for stage, (group_size, promotion_size) in enumerate(zip(group_sizes, promotion_sizes)):
 
-                num_groups = len(stage_ids) // group_size
-                groups = [stage_ids[i::num_groups] for i in range(num_groups)]
+                num_groups = max(1, math.ceil(len(stage_ids) / group_size))
+                groups = [[] for _ in range(num_groups)]
+                for idx, v in enumerate(stage_ids):
+                    groups[idx % num_groups].append(v)
 
-                stage_ids = []
-                for gid in range(len(groups)):
-
-                    group_candidate_ids = groups[gid]
+                new_stage = []
+                for group_candidate_ids in groups:
                     random.shuffle(group_candidate_ids)
                     group_candidates = [candidates[i] for i in group_candidate_ids]
+                    k = min(len(group_candidate_ids), promotion_size)
+
+                    if k == 0:
+                        continue
 
                     if return_record:
                         top_indices, lm_outputs = ranking_func(query, group_candidates, promotion_size, return_lm_outputs=True, **kwargs)
                         record.num_processed_docs += len(group_candidates)
-                        record.num_processed_tokens += lm_outputs.num_processed_tokens
-                        record.num_generated_tokens += lm_outputs.num_generated_tokens
                         record.lm_outputs.append(lm_outputs)
                     else:
                         top_indices = ranking_func(query, group_candidates, promotion_size, **kwargs)  # select top M form N candidates
 
-                    top_ids = [group_candidate_ids[i] for i in top_indices]  # convert to global index
-                    stage_ids.extend(top_ids)
+                    global_ids = [group_candidate_ids[i] for i in top_indices]
+                    new_stage.extend(global_ids)
 
-                    for doc_id in top_ids:
-                        doc_scores[doc_id] += 1
+                    for gid in global_ids:
+                        doc_scores[gid] += (1 + stage * stage_weight)
 
-                stage_ids = sorted(stage_ids, key=lambda x: doc_scores[x], reverse=True)
+                stage_ids = sorted(new_stage, key=lambda x: doc_scores[x], reverse=True)
+
+                if len(stage_ids) <= 1:
+                    break
 
         ranked_indices, _ = zip(*sorted(enumerate(doc_scores), key=lambda x: x[1], reverse=True))
         ranked_result = [candidates[i] for i in ranked_indices]

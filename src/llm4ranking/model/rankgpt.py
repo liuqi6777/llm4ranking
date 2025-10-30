@@ -46,7 +46,7 @@ class RankGPT(BaseRankingModel):
                 Either just the ranking permutation or both the permutation and LM outputs
         """
         messages = self.create_messages(query, candidates)
-        lm_outputs = self.lm.generate(messages, return_num_tokens=True, **kwargs)
+        lm_outputs = self.lm.generate(messages, **kwargs)
         permutation = self.parse_output(lm_outputs.text, len(candidates))
         if return_lm_outputs:
             return permutation, lm_outputs

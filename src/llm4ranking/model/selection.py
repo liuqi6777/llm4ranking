@@ -54,7 +54,7 @@ class TourRankSelection(BaseRankingModel):
                 If return_lm_outputs is True, also returns the LM outputs.
         """
         messages = self.create_messages(query, candidates, num_selection)
-        lm_outputs = self.lm.generate(messages, return_num_tokens=True, **kwargs)
+        lm_outputs = self.lm.generate(messages, **kwargs)
         seleted_idx = self.parse_output(lm_outputs.text, num_selection)
         if return_lm_outputs:
             return seleted_idx, lm_outputs

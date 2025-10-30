@@ -24,7 +24,6 @@ class VLLM(LM):
     def generate(
         self,
         messages: list[dict[str, str]],
-        return_num_tokens: Optional[bool] = False,
         **kwargs
     ) -> Union[str, LMOutput]:
         max_new_tokens = kwargs.pop("max_new_tokens", None)
@@ -48,7 +47,6 @@ class VLLM(LM):
     def loglikelihood(
         self,
         messages: dict[str, str],
-        return_num_tokens: Optional[bool] = False,
         **kwargs
     ) -> Union[float, LMOutput]:
         raise NotImplementedError("loglikelihood is not supported for vLLM engine.")
@@ -56,7 +54,6 @@ class VLLM(LM):
     def logits(
         self,
         messages: dict[str, str],
-        return_num_tokens: Optional[bool] = False,
         **kwargs
     ) -> torch.Tensor:
         raise NotImplementedError("logits is not supported for vLLM engine.")

@@ -42,9 +42,8 @@ class OpenAIClient(LM):
     def generate(
         self,
         messages: List[Dict[str, str]],
-        return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> Union[str, LMOutput]:
+    ) -> LMOutput:
         
         response = self.client.chat.completions.create(
             model=self.model,
@@ -55,17 +54,9 @@ class OpenAIClient(LM):
 
         generated_message = response.choices[0].message.content.strip()
 
-        if return_num_tokens:
-            num_processed_tokens = response.usage.prompt_tokens
-            num_generated_tokens = response.usage.completion_tokens
-
-            return LMOutput(
-                text=generated_message,
-                num_processed_tokens=num_processed_tokens,
-                num_generated_tokens=num_generated_tokens,
-            )
-
-        return generated_message
+        return LMOutput(
+            text=generated_message,
+        )
 
     def loglikelihood(self, **kwargs):
         raise NotImplementedError("OpenAI API does not support loglikelihood calculation")

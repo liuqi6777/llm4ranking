@@ -44,7 +44,7 @@ class First(BaseRankingModel):
             raise ValueError(f"Number of candidates ({len(candidates)}) exceeds the maximum number of supported candidates ({len(self.DOCIDS)})")
 
         messages = self.create_messages(query, candidates)
-        lm_outputs = self.lm.logits(messages, return_num_tokens=True, **kwargs)
+        lm_outputs = self.lm.logits(messages, **kwargs)
         logits = lm_outputs.logits
         token_ids = [self.lm.tokenizer.encode(i)[0] for i in self.DOCIDS[0:len(candidates)]]
         logit_for_each_candidate = [logits[i] for i in token_ids]

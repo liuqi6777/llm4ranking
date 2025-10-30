@@ -61,7 +61,7 @@ class QueryGeneration(BaseRankingModel):
                 If return_lm_outputs is True, also returns the LM outputs.
         """
         messages = self.create_messages(query, doc)
-        lm_outputs = self.lm.loglikelihood(messages, return_num_tokens=True)
+        lm_outputs = self.lm.loglikelihood(messages)
         if return_lm_outputs:
             return lm_outputs.loglikelihood, lm_outputs
         return lm_outputs.loglikelihood

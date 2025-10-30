@@ -10,8 +10,6 @@ import torch
 class LMOutput:
     text: Optional[str] = None
     loglikelihood: Optional[float] = None
-    num_processed_tokens: Optional[int] = None
-    num_generated_tokens: Optional[int] = None
     logits: Optional[np.ndarray] = None
 
 

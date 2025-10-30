@@ -157,9 +157,8 @@ class HFLM(LM):
     def generate(
         self,
         messages: list[dict[str, str]],
-        return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> Union[str, LMOutput]:
+    ) -> LMOutput:
         """Generate text from the model.
 
         Args:
@@ -193,24 +192,16 @@ class HFLM(LM):
             )[0, input_ids.shape[-1]:].cpu()
         output_text = self.tokenizer.decode(outputs, skip_special_tokens=True)
 
-        if return_num_tokens:
-            num_processed_tokens = input_ids.shape[-1]
-            num_generated_tokens = outputs.shape[-1]
+        return LMOutput(
+            text=output_text,
+        )
 
-            return LMOutput(
-                text=output_text,
-                num_processed_tokens=num_processed_tokens,
-                num_generated_tokens=num_generated_tokens,
-            )
-
-        return output_text
 
     def loglikelihood(
         self,
         messages: dict[str, str],
-        return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> Union[float, LMOutput]:
+    ) -> LMOutput:
         """Get the loglikelihood of the model.
 
         Args:
@@ -238,24 +229,17 @@ class HFLM(LM):
                 labels.view(-1),
             ).float().item()
 
-        if return_num_tokens:
-            num_processed_tokens = input_ids.shape[-1]
-
-            return LMOutput(
-                text=messages[-1]["content"],
-                loglikelihood=loglikelihood,
-                num_processed_tokens=num_processed_tokens,
-            )
-
-        return loglikelihood
+        return LMOutput(
+            text=messages[-1]["content"],
+            loglikelihood=loglikelihood,
+        )
 
     def logits(
         self,
         messages: dict[str, str],
         token: Optional[str] = None,
-        return_num_tokens: Optional[bool] = False,
         **kwargs
-    ) -> torch.Tensor:
+    ) -> LMOutput:
         """Get the logits of the model.
 
         Args:
@@ -279,13 +263,9 @@ class HFLM(LM):
         if token:
             token_id = self.tokenizer.convert_tokens_to_ids(token)
             logits = logits[token_id]
-        if return_num_tokens:
-            num_processed_tokens = input_ids.shape[-1]
-            return LMOutput(
-                logits=logits,
-                num_processed_tokens=num_processed_tokens,
-            )
-        return logits
+        return LMOutput(
+            logits=logits,
+        )
 
     def _mask_labels(
         self, 

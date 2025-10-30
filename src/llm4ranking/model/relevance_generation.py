@@ -59,7 +59,7 @@ class RelevanceGeneration(BaseRankingModel):
                 If return_lm_outputs is True, also returns the LM outputs.
         """
         messages = self.create_messages(query, doc)
-        lm_outputs = self.lm.logits(messages, token="yes", return_num_tokens=True)
+        lm_outputs = self.lm.logits(messages, token="yes")
         if return_lm_outputs:
             return lm_outputs.logits, lm_outputs
         return lm_outputs.logits

@@ -48,8 +48,8 @@ class PRP(BaseRankingModel):
                 Returns 1 if doc1 is more relevant, -1 if doc2 is more relevant, 0 if tied.
                 If return_lm_outputs is True, also returns the LM outputs.
         """
-        lm_outputs = self.lm.generate(self.create_messages(query, doc1, doc2), return_num_tokens=True, **kwargs)
-        lm_outputs_reverse = self.lm.generate(self.create_messages(query, doc2, doc1), return_num_tokens=True, **kwargs)
+        lm_outputs = self.lm.generate(self.create_messages(query, doc1, doc2), **kwargs)
+        lm_outputs_reverse = self.lm.generate(self.create_messages(query, doc2, doc1), **kwargs)
 
         outputs = [lm_outputs.text, lm_outputs_reverse.text]
         if self.parse_output(outputs[0]) == "a" and self.parse_output(outputs[1]) == "b":
@@ -60,8 +60,6 @@ class PRP(BaseRankingModel):
             score = 0
 
         if return_lm_outputs:
-            lm_outputs.num_generated_tokens += lm_outputs_reverse.num_generated_tokens
-            lm_outputs.num_processed_tokens += lm_outputs_reverse.num_processed_tokens
             lm_outputs.text = [lm_outputs.text, lm_outputs_reverse.text]
             return score, lm_outputs
 
