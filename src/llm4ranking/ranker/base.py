@@ -353,6 +353,14 @@ class TournamentReranker(Reranker):
         if truncate_length:
             candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
 
+        if len(candidates) == 0:
+            outputs = ([], )
+            if return_indices:
+                outputs += ([], )
+            if return_record:
+                outputs += (None, )
+            return outputs
+
         doc_scores = [0] * len(candidates)
 
         for _ in range(tuornament_times):
@@ -368,6 +376,9 @@ class TournamentReranker(Reranker):
 
                 new_stage = []
                 for group_candidate_ids in groups:
+                    if not group_candidate_ids:
+                        continue
+
                     random.shuffle(group_candidate_ids)
                     group_candidates = [candidates[i] for i in group_candidate_ids]
                     k = min(len(group_candidate_ids), promotion_size)
@@ -376,11 +387,11 @@ class TournamentReranker(Reranker):
                         continue
 
                     if return_record:
-                        top_indices, lm_outputs = ranking_func(query, group_candidates, promotion_size, return_lm_outputs=True, **kwargs)
+                        top_indices, lm_outputs = ranking_func(query, group_candidates, min(promotion_size, len(group_candidates)), return_lm_outputs=True, **kwargs)
                         record.num_processed_docs += len(group_candidates)
                         record.lm_outputs.append(lm_outputs)
                     else:
-                        top_indices = ranking_func(query, group_candidates, promotion_size, **kwargs)  # select top M form N candidates
+                        top_indices = ranking_func(query, group_candidates, min(promotion_size, len(group_candidates)), **kwargs)  # select top M form N candidates
 
                     global_ids = [group_candidate_ids[i] for i in top_indices]
                     new_stage.extend(global_ids)
