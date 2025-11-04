@@ -355,10 +355,10 @@ class TournamentReranker(Reranker):
 
         doc_scores = [0] * len(candidates)
 
-        # construct a random order of documents for the first stage
-        stage_ids = list(range(len(candidates)))
-
         for _ in range(tuornament_times):
+            # construct a random order of documents for the first stage
+            stage_ids = list(range(len(candidates)))
+
             for stage, (group_size, promotion_size) in enumerate(zip(group_sizes, promotion_sizes)):
 
                 num_groups = max(1, math.ceil(len(stage_ids) / group_size))
