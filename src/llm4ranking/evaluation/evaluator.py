@@ -59,7 +59,7 @@ def evaluate(
                     "query": data[i]["query"],
                     "hits": [data[i]["hits"][j] for j in rerank_indices]
                 })
-                records.append(asdict(outputs))
+                records.append(asdict(outputs) if outputs else None)
 
             if output_dir is not None:
                 os.makedirs(output_dir, exist_ok=True)
