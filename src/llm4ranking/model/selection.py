@@ -55,7 +55,7 @@ class TourRankSelection(BaseRankingModel):
         """
         messages = self.create_messages(query, candidates, num_selection)
         lm_outputs = self.lm.generate(messages, **kwargs)
-        seleted_idx = self.parse_output(lm_outputs.text, num_selection)
+        seleted_idx = self.parse_output(lm_outputs.text, num_selection, len(candidates))
         if return_lm_outputs:
             return seleted_idx, lm_outputs
         return seleted_idx
@@ -82,7 +82,7 @@ class TourRankSelection(BaseRankingModel):
         ]
         return messages
 
-    def parse_output(self, output: str, n: int) -> list[int]:
+    def parse_output(self, output: str, n: int, N: int) -> list[int]:
         """Parse the LM output into selected document indices.
 
         Args:
@@ -93,6 +93,7 @@ class TourRankSelection(BaseRankingModel):
             list[int]: Indices of selected documents
         """
         idxs = [int(idx) - 1 for idx in re.findall(r"\[(\d+)\]", output)]
+        idxs = [x for x in idxs if x < N]
         if len(idxs) > n:
             idxs = idxs[:n]
         if len(idxs) < n:

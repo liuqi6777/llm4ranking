@@ -3,6 +3,7 @@ import collections
 import datetime
 import json
 import os
+import random
 import tempfile
 from dataclasses import asdict
 from tqdm import tqdm
@@ -17,6 +18,7 @@ def evaluate(
     datasets: list[str],
     retriever: str = "bm25",
     topk: int = 100,
+    order: str = "initial",
     max_samples: int = None,
     output_dir: str = None,
 ):
@@ -31,11 +33,23 @@ def evaluate(
         try:
             print(f"Evaluating dataset {dataset}...")
             
-            data = load_dataset("liuqi6777/retrieval_results", data_files=f"{retriever}/{dataset}_top{topk}.jsonl", split="train").to_list()
+            data = load_dataset("liuqi6777/retrieval_results", data_files=f"{retriever}/{dataset}_top100.jsonl", split="train").to_list()
 
             results[dataset] = {}
             if max_samples is not None:
                 data = data[:max_samples]
+
+            if topk:
+                if topk > 100:
+                    print("Warning: only support top 100 now, will rerank top 100...")
+                for i in range(len(data)):
+                    data[i]["hits"] = data[i]["hits"][:topk]
+
+            for i in range(len(data)):
+                if order == "reverse":
+                    data[i]["hits"].reverse()
+                elif order == "random":
+                    random.shuffle(data[i]["hits"])
 
             if dataset.startswith("bright"):
                 task_name = dataset.removeprefix("bright-").replace("-", "_")
@@ -73,9 +87,15 @@ def evaluate(
                     output_dir,
                     f"records_{dataset}_top{topk}.json"
                 )
+                metrics_file = os.path.join(
+                    output_dir,
+                    f"metrics_{dataset}_top{topk}.json"
+                )
                 metrics = trec_eval(dataset, output_file, excluded_ids)
                 with open(records_file, "w") as f:
                     json.dump(records, f, indent=4, ensure_ascii=False)
+                with open(metrics_file, "w") as f:
+                    json.dump(metrics, f, indent=4, ensure_ascii=False)
             else:
                 with tempfile.NamedTemporaryFile("w") as f:
                     write_results(rerank_results, f)
@@ -97,6 +117,7 @@ def simple_evaluate(
     reranking_approach: str,
     retriever: str = "bm25",
     topk: int = 100,
+    order: str = "initial",
     reranking_args: dict = {},
     model_fw_args: dict = {},
     prompt_template: str = None,
@@ -117,6 +138,7 @@ def simple_evaluate(
         datasets=datasets,
         retriever=retriever,
         topk=topk,
+        order=order,
         output_dir=output_dir
     )
 
@@ -182,6 +204,7 @@ def main(args):
         reranking_approach=args.reranking_approach,
         retriever=args.retriever,
         topk=args.topk,
+        order=args.order,
         reranking_args=args.reranking_args,
         model_fw_args=args.model_fw_args,
         prompt_template=args.prompt_template,
@@ -202,6 +225,7 @@ if __name__ == "__main__":
     parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--retriever", type=str, default="bm25")
     parser.add_argument("--topk", type=int, default=100)
+    parser.add_argument("--order", type=str, default="initial", choices=["initial", "random", "reverse"])
     parser.add_argument("--reranking_args", type=parse_dict_args, default={})
     parser.add_argument("--model_fw_args", type=parse_dict_args, default={})
     parser.add_argument("--prompt_template", type=str, default=None)
