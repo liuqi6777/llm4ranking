@@ -220,6 +220,7 @@ class HFLM(LM):
             truncation=self._truncation,
             max_length=self.max_length,
             continue_final_message=True,  # this will remove the last eos token
+            enable_thinking=False
         ).to(self.device)
         labels = self._mask_labels(messages, input_ids.clone())[:, 1:]
         with torch.no_grad():
@@ -255,14 +256,15 @@ class HFLM(LM):
             return_tensors="pt",
             truncation=self._truncation,
             max_length=self.max_length,
-            add_generation_prompt=True
+            add_generation_prompt=True,
+            enable_thinking=False
         ).to(self.device)
         with torch.no_grad():
             outputs = self.model(input_ids, **kwargs)
             logits = outputs.logits[0, -1, :].detach().float().cpu().numpy()
         if token:
             token_id = self.tokenizer.convert_tokens_to_ids(token)
-            logits = logits[token_id]
+            logits = logits[token_id].item()
         return LMOutput(
             logits=logits,
         )
