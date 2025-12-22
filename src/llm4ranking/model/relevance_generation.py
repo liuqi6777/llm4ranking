@@ -1,3 +1,4 @@
+import math
 from typing import Union
 
 from llm4ranking.lm.base import LMOutput
@@ -59,10 +60,13 @@ class RelevanceGeneration(BaseRankingModel):
                 If return_lm_outputs is True, also returns the LM outputs.
         """
         messages = self.create_messages(query, doc)
-        lm_outputs = self.lm.logits(messages, token="yes")
+        lm_outputs = self.lm.logits(messages, token=["yes", "no"])
+        yes_prob = math.exp(lm_outputs.logits[0])
+        no_prob = math.exp(lm_outputs.logits[1])
+        relevance_score = yes_prob / (yes_prob + no_prob)
         if return_lm_outputs:
-            return lm_outputs.logits, lm_outputs
-        return lm_outputs.logits
+            return relevance_score, lm_outputs
+        return relevance_score
 
 
 class FineGrainedRelevanceGeneration(RelevanceGeneration):
