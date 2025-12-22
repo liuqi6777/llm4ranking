@@ -263,8 +263,14 @@ class HFLM(LM):
             outputs = self.model(input_ids, **kwargs)
             logits = outputs.logits[0, -1, :].detach().float().cpu().numpy()
         if token:
-            token_id = self.tokenizer.convert_tokens_to_ids(token)
-            logits = logits[token_id].item()
+            if isinstance(token, str):
+                token_id = self.tokenizer.convert_tokens_to_ids(token)
+                logits = logits[token_id].item()
+            elif isinstance(token, list):
+                token_ids = self.tokenizer.convert_tokens_to_ids(token)
+                logits = [logits[token_id].item() for token_id in token_ids]
+            else:
+                raise ValueError(f"Token must be a string or a list of strings, not {type(token)}")
         return LMOutput(
             logits=logits,
         )
