@@ -20,6 +20,10 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
+    data_type: str = field(
+        default="pointwise",
+        metadata={"help": "Type of data: pointwise or distillation"}
+    )
     data_path: str = field(
         default=None,
         metadata={"help": "Path to training data file", "required": True}
@@ -36,18 +40,15 @@ class DataArguments:
 
 @dataclass
 class TrainingArguments(HFTrainingArguments):
+    loss_type: str = field(
+        default="ce",
+        metadata={"help": "Type of loss function to use"}
+    )
     cache_dir: Optional[str] = field(default=None)
-    optim: str = field(default="adamw_torch")
     model_max_length: int = field(
         default=4096,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
-        },
-    )
-    attn_implementation: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "The implementation of attention. Can be 'flash_attention_2'."
         },
     )
 
@@ -59,19 +60,19 @@ class LoraArguments:
         metadata={"help": "Enable LoRA training"}
     )
     lora_r: int = field(
-        default=8,
+        default=16,
         metadata={"help": "LoRA rank"}
     )
     lora_alpha: int = field(
-        default=16,
+        default=32,
         metadata={"help": "LoRA alpha"}
     )
     lora_dropout: float = field(
-        default=0.05,
+        default=0.0,
         metadata={"help": "LoRA dropout probability"}
     )
     lora_target_modules: list[str] = field(
-        default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj"],
+        default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         metadata={"help": "Target modules for LoRA adaptation"}
     )
     lora_bias: str = field(
