@@ -113,7 +113,6 @@ class HFLM(LM):
                     tokenizer,
                     revision=revision,
                     trust_remote_code=trust_remote_code,
-                    use_fast=use_fast_tokenizer,
                     **kwargs,
                 )
             elif isinstance(tokenizer, (transformers.PreTrainedTokenizer, transformers.PreTrainedTokenizerFast)):
@@ -126,7 +125,6 @@ class HFLM(LM):
                 model,
                 revision=revision,
                 trust_remote_code=trust_remote_code,
-                use_fast=use_fast_tokenizer,
             )
 
         self._max_length = max_length
