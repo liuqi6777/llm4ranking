@@ -1,8 +1,8 @@
 import re
 from typing import Union
 
-from llm4ranking.lm.base import LMOutput
-from llm4ranking.model.base import BaseRankingModel
+from llm4ranking.lm.base import Capability, LMOutput
+from llm4ranking.policy.base import ListwisePolicy
 
 
 DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} passages, each indicated by a numerical identifier []. Rank the passages based on their relevance to the search query: {{ query }}.
@@ -14,7 +14,7 @@ Rank the {{ candidates|length }} passages above based on their relevance to the 
 """
 
 
-class RankGPT(BaseRankingModel):
+class RankGPT(ListwisePolicy):
     """RankGPT generates a complete ranking of documents.
     
     This model takes all candidates at once and generates their relative ordering
@@ -23,8 +23,8 @@ class RankGPT(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
-    ranker = "listwise"
     name = "RankGPT"
+    required_capabilities = {Capability.GENERATE}
 
     def __call__(
         self,

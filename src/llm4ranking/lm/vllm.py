@@ -3,11 +3,12 @@ import vllm
 from typing import Optional, Union
 from vllm import LLM, SamplingParams
 
-from llm4ranking.lm.base import BatchLMOutput, LM, LMOutput
+from llm4ranking.lm.base import BatchLMOutput, Capability, LM, LMOutput
 
 
 class VLLM(LM):
     supports_batch_generate = True
+    capabilities = {Capability.GENERATE, Capability.BATCH_GENERATE}
 
     def __init__(
         self,

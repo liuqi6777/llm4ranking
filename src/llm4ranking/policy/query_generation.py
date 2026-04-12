@@ -1,7 +1,7 @@
 from typing import Union
 
-from llm4ranking.lm.base import BatchLMOutput, LMOutput
-from llm4ranking.model.base import BaseRankingModel
+from llm4ranking.lm.base import BatchLMOutput, Capability, LMOutput
+from llm4ranking.policy.base import PointwisePolicy
 
 
 DEFAULT_PROMPT_TEMPLATE = """Please write a question based on this document.
@@ -11,7 +11,7 @@ Document: {{ doc }}
 Query:"""
 
 
-class QueryGeneration(BaseRankingModel):
+class QueryGeneration(PointwisePolicy):
     """Pointwise query generation model for document ranking.
     
     This model evaluates document relevance by attempting to generate the original query
@@ -21,9 +21,9 @@ class QueryGeneration(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
-    ranker = "pointwise"
     name = "QueryGeneration"
     supports_batch = True
+    required_capabilities = {Capability.LOGLIKELIHOOD, Capability.BATCH_LOGLIKELIHOOD}
 
     def create_messages(
         self,

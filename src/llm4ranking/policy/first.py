@@ -1,7 +1,7 @@
 from typing import Union
 
-from llm4ranking.lm.base import LMOutput
-from llm4ranking.model.base import BaseRankingModel
+from llm4ranking.lm.base import Capability, LMOutput
+from llm4ranking.policy.base import ListwisePolicy
 
 
 DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} documents, each indicated by a alphabelt identifier. Rank the passages based on their relevance to the search query. All the passages should be listed using identifiers in descending order of relevance. Search Query: {{ query }}.
@@ -13,14 +13,14 @@ You should provide the list of identifiers in the order of relevance, for exampl
 """
 
 
-class First(BaseRankingModel):
+class First(ListwisePolicy):
     """FIRST reranker that uses the logit of the last input token for listwise ranking."""
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
     DOCIDS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-    ranker = "listwise"
     name = "FIRST"
+    required_capabilities = {Capability.LOGITS}
 
     def __call__(
         self,

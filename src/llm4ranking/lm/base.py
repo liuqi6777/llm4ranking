@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Optional, Union
 
 import numpy as np
@@ -19,13 +20,47 @@ class BatchLMOutput:
     logits: Optional[list[Union[np.ndarray, float, list[float]]]] = None
 
 
+class Capability(Enum):
+    GENERATE = auto()
+    LOGLIKELIHOOD = auto()
+    LOGITS = auto()
+    BATCH_GENERATE = auto()
+    BATCH_LOGLIKELIHOOD = auto()
+    BATCH_LOGITS = auto()
+
+
 class LM(ABC):
     supports_batch_generate = False
     supports_batch_loglikelihood = False
     supports_batch_logits = False
+    capabilities: set[Capability] = set()
 
     def __init__(self, **kwargs):
         pass
+
+    def _effective_capabilities(self) -> set[Capability]:
+        capabilities = set(self.capabilities)
+        if type(self).generate is not LM.generate:
+            capabilities.add(Capability.GENERATE)
+            capabilities.add(Capability.BATCH_GENERATE)
+        if type(self).loglikelihood is not LM.loglikelihood:
+            capabilities.add(Capability.LOGLIKELIHOOD)
+            capabilities.add(Capability.BATCH_LOGLIKELIHOOD)
+        if type(self).logits is not LM.logits:
+            capabilities.add(Capability.LOGITS)
+            capabilities.add(Capability.BATCH_LOGITS)
+        return capabilities
+
+    def has_capabilities(self, *required: Capability) -> bool:
+        return set(required).issubset(self._effective_capabilities())
+
+    def require_capabilities(self, *required: Capability) -> None:
+        missing = set(required) - self._effective_capabilities()
+        if missing:
+            missing_names = ", ".join(capability.name for capability in sorted(missing, key=lambda item: item.name))
+            raise ValueError(
+                f"{self.__class__.__name__} does not support required capabilities: {missing_names}"
+            )
 
     @abstractmethod
     def generate(self, messages: dict[str, str], **kwargs) -> Union[str, LMOutput]:
@@ -44,6 +79,7 @@ class LM(ABC):
         batch_messages: list[list[dict[str, str]]],
         **kwargs,
     ) -> BatchLMOutput:
+        self.require_capabilities(Capability.GENERATE)
         outputs = [self.generate(messages, **kwargs) for messages in batch_messages]
         return BatchLMOutput(
             text=[output.text for output in outputs],
@@ -54,6 +90,7 @@ class LM(ABC):
         batch_messages: list[list[dict[str, str]]],
         **kwargs,
     ) -> BatchLMOutput:
+        self.require_capabilities(Capability.LOGLIKELIHOOD)
         outputs = [self.loglikelihood(messages, **kwargs) for messages in batch_messages]
         return BatchLMOutput(
             text=[output.text for output in outputs],
@@ -66,6 +103,7 @@ class LM(ABC):
         token: Optional[Union[str, list[str]]] = None,
         **kwargs,
     ) -> BatchLMOutput:
+        self.require_capabilities(Capability.LOGITS)
         outputs = [self.logits(messages, token=token, **kwargs) for messages in batch_messages]
         return BatchLMOutput(
             logits=[output.logits for output in outputs],

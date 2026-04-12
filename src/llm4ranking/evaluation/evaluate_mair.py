@@ -1,11 +1,13 @@
 import argparse
-import ast
 import datetime
 import json
 import os
 
-from llm4ranking import Reranker
-from llm4ranking.evaluation.evaluator import evaluate_one_dataset
+from llm4ranking.evaluation.evaluator import (
+    add_reranker_cli_arguments,
+    build_reranker_from_cli_args,
+    evaluate_one_dataset,
+)
 from llm4ranking.evaluation.utils import load_mair, retrieval_bm25
 from llm4ranking.evaluation.trec_eval import trec_eval, compute_metrics
 
@@ -58,33 +60,18 @@ def get_tasks_by_domain(domain):
 def get_all_tasks():
     return list(TASK_CONFIG.keys())
 
-
-
-def parse_dict_args(args_string: str):
-    args = {}
-    for arg in args_string.split(","):
-        key, value = arg.strip().split("=")
-        try:
-            args[key] = ast.literal_eval(value)
-        except Exception:
-            args[key] = value
-    return args
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_type", type=str, required=True)
-    parser.add_argument("--model_args", type=parse_dict_args, required=True)
-    parser.add_argument("--reranking_approach", type=str, required=True)
+    add_reranker_cli_arguments(parser)
     parser.add_argument("--tasks", nargs="+", required=True)
     parser.add_argument("--retriever", type=str, default="bm25")
     parser.add_argument("--topk", type=int, default=100)
-    parser.add_argument("--reranking_args", type=parse_dict_args, default={})
-    parser.add_argument("--model_fw_args", type=parse_dict_args, default={})
-    parser.add_argument("--prompt_template", type=str, default=None)
     parser.add_argument("--output_dir", type=str, default=None)
     args = parser.parse_args()
     print(args)
+
+    if not args.config_json and args.model_args is None:
+        parser.error("Either --config_json or --model_args must be provided.")
 
     if args.output_dir is None:
         output_dir = os.path.join(
@@ -96,15 +83,7 @@ if __name__ == "__main__":
     with open(os.path.join(output_dir, "cli_args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
-    reranker = Reranker(
-        reranking_approach=args.reranking_approach,
-        model_type=args.model_type,
-        model_name=args.model_args["model"],
-        model_args=args.model_args,
-        reranking_args=args.reranking_args,
-        model_fw_args=args.model_fw_args,
-        prompt_template=args.prompt_template,
-    )
+    reranker = build_reranker_from_cli_args(args)
 
     for task in args.tasks:
         print(f"Evaluating task: {task}")

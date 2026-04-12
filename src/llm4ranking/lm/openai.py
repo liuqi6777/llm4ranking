@@ -2,11 +2,12 @@ import os
 from typing import Optional, Union, List, Dict
 
 from openai import OpenAI
-from llm4ranking.lm.base import BatchLMOutput, LM, LMOutput
+from llm4ranking.lm.base import BatchLMOutput, Capability, LM, LMOutput
 
 
 class OpenAIClient(LM):
     supports_batch_generate = True
+    capabilities = {Capability.GENERATE, Capability.BATCH_GENERATE}
 
     def __init__(
         self,
@@ -26,7 +27,7 @@ class OpenAIClient(LM):
 
         self.client = OpenAI(
             base_url=base_url,
-            api_key=api_key,
+            api_key=self.api_key,
             **kwargs
         )
 

@@ -1,8 +1,8 @@
-from llm4ranking import list_reranking_models
+from llm4ranking import list_available_reranking_approaches
 
 
 def main():
-    for approach in list_reranking_models():
+    for approach in list_available_reranking_approaches():
         print(approach)
 
 

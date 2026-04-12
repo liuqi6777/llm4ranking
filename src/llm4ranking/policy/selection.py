@@ -1,8 +1,8 @@
 import re
 from typing import Union
 
-from llm4ranking.lm.base import LMOutput
-from llm4ranking.model.base import BaseRankingModel
+from llm4ranking.lm.base import Capability, LMOutput
+from llm4ranking.policy.base import SelectionPolicy
 
 
 DEFAULT_PROMPT_TEMPLATE = """I will provide you with the given query and {{ candidates|length }} documents, each indicated by a numerical identifier [].
@@ -19,7 +19,7 @@ Output the {{ num_selection }} unique documents that are most relevant to the Qu
 """
 
 
-class TourRankSelection(BaseRankingModel):
+class TourRankSelection(SelectionPolicy):
     """Tournament selection model that picks top documents from a set.
     
     This model takes a set of documents and directly selects a specified number
@@ -28,8 +28,8 @@ class TourRankSelection(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
-    ranker = "tourrank"
     name = "TourRank"
+    required_capabilities = {Capability.GENERATE}
 
     def __call__(
         self,

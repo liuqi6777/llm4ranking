@@ -5,13 +5,21 @@ from typing import Optional, Union
 from peft import PeftModel
 from torch.nn.utils.rnn import pad_sequence
 
-from llm4ranking.lm.base import BatchLMOutput, LM, LMOutput
+from llm4ranking.lm.base import BatchLMOutput, Capability, LM, LMOutput
 
 
 class HFLM(LM):
     supports_batch_generate = True
     supports_batch_loglikelihood = True
     supports_batch_logits = True
+    capabilities = {
+        Capability.GENERATE,
+        Capability.LOGLIKELIHOOD,
+        Capability.LOGITS,
+        Capability.BATCH_GENERATE,
+        Capability.BATCH_LOGLIKELIHOOD,
+        Capability.BATCH_LOGITS,
+    }
 
     def __init__(
         self,

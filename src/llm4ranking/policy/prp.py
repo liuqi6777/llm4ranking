@@ -1,7 +1,7 @@
 from typing import Union
 
-from llm4ranking.lm.base import BatchLMOutput, LMOutput
-from llm4ranking.model.base import BaseRankingModel
+from llm4ranking.lm.base import BatchLMOutput, Capability, LMOutput
+from llm4ranking.policy.base import PairwisePolicy
 
 
 DEFAULT_PROMPT_TEMPLATE = """Given a query: {{ query }}, which of the following two documents is more relevant to the query?
@@ -14,7 +14,7 @@ Only output "A" or "B", do not say anything else or explain.
 """
 
 
-class PRP(BaseRankingModel):
+class PRP(PairwisePolicy):
     """PRP (Pairwise Ranking Prompting) that compares two documents at a time.
     
     This model takes pairs of documents and determines which one is more relevant
@@ -23,9 +23,9 @@ class PRP(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
-    ranker = "pairwise"
     name = "PRP"
     supports_batch = True
+    required_capabilities = {Capability.GENERATE, Capability.BATCH_GENERATE}
 
     def __call__(
         self,

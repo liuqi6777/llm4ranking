@@ -12,7 +12,7 @@ from statistics import mean
 from tqdm import tqdm
 from datasets import load_dataset
 
-from llm4ranking import Reranker
+from llm4ranking import ModelConfig, Reranker, RerankerConfig
 from llm4ranking.evaluation.trec_eval import trec_eval, compute_metrics
 
 
@@ -98,16 +98,15 @@ def evaluate(
             pending_indices = [i for i in range(len(data)) if i not in completed_predictions]
 
             for i in tqdm(pending_indices):
-                _, rerank_indices, outputs = rerank(
+                result = rerank(
                     query=data[i]["query"],
                     candidates=[x["content"] for x in data[i]["hits"]],
-                    return_indices=True,
                     return_record=True
                 )
-                record = asdict(outputs) if outputs else None
+                record = asdict(result.record) if result.record else None
                 rerank_result = {
                     "query": data[i]["query"],
-                    "hits": [data[i]["hits"][j] for j in rerank_indices]
+                    "hits": [data[i]["hits"][j] for j in result.indices]
                 }
                 rerank_results[i] = rerank_result
                 records[i] = record
@@ -118,7 +117,7 @@ def evaluate(
                         entry=build_prediction_entry(
                             sample_idx=i,
                             sample=data[i],
-                            rerank_indices=list(rerank_indices),
+                            rerank_indices=list(result.indices),
                             record=record,
                             config_signature=config_signature,
                         ),
@@ -177,8 +176,8 @@ def simple_evaluate(
     retriever: str = "bm25",
     topk: int = 100,
     order: str = "initial",
-    reranking_args: dict = {},
-    model_fw_args: dict = {},
+    strategy_args: dict | None = None,
+    backend_args: dict | None = None,
     prompt_template: str = None,
     output_dir: str = None,
     reuse_predictions: bool = True,
@@ -189,8 +188,8 @@ def simple_evaluate(
         model_name=model_args["model"],
         model_args=model_args,
         prompt_template=prompt_template,
-        reranking_args=reranking_args,
-        model_fw_args=model_fw_args,
+        strategy_args=strategy_args,
+        backend_args=backend_args,
     )
 
     return evaluate(
@@ -209,8 +208,8 @@ def simple_evaluate(
             "retriever": retriever,
             "topk": topk,
             "order": order,
-            "reranking_args": reranking_args,
-            "model_fw_args": model_fw_args,
+            "strategy_args": strategy_args,
+            "backend_args": backend_args,
             "prompt_template": prompt_template,
         },
     )
@@ -226,12 +225,8 @@ def evaluate_one_dataset(
 ):
     run = collections.defaultdict(dict)
     for query, query_id, one_docs, one_doc_ids in tqdm(zip(queries, query_ids, documents, doc_ids)):
-        _, rerank_indices, *_ = reranker.rerank(
-            query=query,
-            candidates=one_docs,
-            return_indices=True
-        )
-        for rank, indice in enumerate(rerank_indices):
+        result = reranker.rerank(query=query, candidates=one_docs)
+        for rank, indice in enumerate(result.indices):
             run[query_id][one_doc_ids[indice]] = round(1 / (rank + 1), 3)
     metrics = compute_metrics(qrels, run)
     return metrics
@@ -333,6 +328,12 @@ def build_summary(
 
 
 def parse_dict_args(args_string: str):
+    if args_string is None:
+        return {}
+    if isinstance(args_string, dict):
+        return dict(args_string)
+    if args_string.strip() == "":
+        return {}
     args = {}
     for arg in args_string.split(","):
         key, value = arg.strip().split("=")
@@ -341,6 +342,72 @@ def parse_dict_args(args_string: str):
         except Exception:
             args[key] = value
     return args
+
+
+def add_reranker_cli_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument("--config_json", type=str, default=None)
+    parser.add_argument("--model_type", type=str, default="openai")
+    parser.add_argument("--model_args", type=parse_dict_args, default=None)
+    parser.add_argument("--reranking_approach", type=str, default="rankgpt")
+    parser.add_argument("--strategy_args", type=parse_dict_args, default=None)
+    parser.add_argument("--backend_args", type=parse_dict_args, default=None)
+    parser.add_argument("--prompt_template", type=str, default=None)
+    return parser
+
+
+def reranker_config_from_mapping(data: dict) -> RerankerConfig:
+    model_data = dict(data.get("model", {}))
+    return RerankerConfig(
+        reranking_approach=data.get("reranking_approach", "rankgpt"),
+        model=ModelConfig(
+            model_type=model_data.get("model_type", "openai"),
+            model_name=model_data.get("model_name"),
+            init_args=dict(model_data.get("init_args", {})),
+            inference_args=dict(model_data.get("inference_args", {})),
+        ),
+        strategy_args=dict(data.get("strategy_args", {})),
+        prompt_template=data.get("prompt_template"),
+    )
+
+
+def build_reranker_from_cli_args(args) -> Reranker:
+    if args.config_json:
+        config = reranker_config_from_mapping(json.loads(args.config_json))
+        return Reranker.from_config(config)
+
+    return Reranker(
+        reranking_approach=args.reranking_approach,
+        model_type=args.model_type,
+        model_name=(args.model_args or {}).get("model"),
+        model_args=args.model_args,
+        strategy_args=args.strategy_args,
+        backend_args=args.backend_args,
+        prompt_template=args.prompt_template,
+    )
+
+
+def build_run_config_from_cli_args(args, datasets: list[str]) -> dict:
+    if args.config_json:
+        return {
+            "config": json.loads(args.config_json),
+            "datasets": datasets,
+            "retriever": args.retriever,
+            "topk": args.topk,
+            "order": args.order,
+        }
+
+    return {
+        "model_type": args.model_type,
+        "model_args": args.model_args,
+        "datasets": datasets,
+        "reranking_approach": args.reranking_approach,
+        "retriever": args.retriever,
+        "topk": args.topk,
+        "order": args.order,
+        "strategy_args": args.strategy_args,
+        "backend_args": args.backend_args,
+        "prompt_template": args.prompt_template,
+    }
 
 
 def main(args):
@@ -357,19 +424,17 @@ def main(args):
     with open(os.path.join(output_dir, "cli_args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
-    results = simple_evaluate(
-        model_type=args.model_type,
-        model_args=args.model_args,
+    reranker = build_reranker_from_cli_args(args)
+    run_config = build_run_config_from_cli_args(args, datasets=args.datasets)
+    results = evaluate(
+        reranker.rerank,
         datasets=args.datasets,
-        reranking_approach=args.reranking_approach,
         retriever=args.retriever,
         topk=args.topk,
         order=args.order,
-        reranking_args=args.reranking_args,
-        model_fw_args=args.model_fw_args,
-        prompt_template=args.prompt_template,
         output_dir=output_dir,
         reuse_predictions=not args.overwrite,
+        run_config=run_config,
     )
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:
@@ -380,20 +445,17 @@ def main(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_type", type=str, required=True)
-    parser.add_argument("--model_args", type=parse_dict_args, required=True)
-    parser.add_argument("--reranking_approach", type=str, required=True)
+    add_reranker_cli_arguments(parser)
     parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--retriever", type=str, default="bm25")
     parser.add_argument("--topk", type=int, default=100)
     parser.add_argument("--order", type=str, default="initial", choices=["initial", "random", "reverse"])
-    parser.add_argument("--reranking_args", type=parse_dict_args, default={})
-    parser.add_argument("--model_fw_args", type=parse_dict_args, default={})
-    parser.add_argument("--prompt_template", type=str, default=None)
-    parser.add_argument("--return_record", default=False, action="store_true")
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--overwrite", default=False, action="store_true")
     args = parser.parse_args()
     print(args)
+
+    if not args.config_json and args.model_args is None:
+        parser.error("Either --config_json or --model_args must be provided.")
 
     main(args)

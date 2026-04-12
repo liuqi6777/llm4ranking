@@ -3,16 +3,21 @@ import math
 import random
 import time
 from abc import ABC, abstractmethod
-from typing import Optional, Callable, Any, Union, List
-from itertools import combinations
 from dataclasses import dataclass, field
+from itertools import combinations
+from typing import Any, Optional
 
-from llm4ranking.lm.base import BatchLMOutput, LMOutput
+from llm4ranking.policy.base import (
+    BaseRankingPolicy,
+    ListwisePolicy,
+    PairwisePolicy,
+    PointwisePolicy,
+    SelectionPolicy,
+)
 
 
 @dataclass
 class RankingRecord:
-
     query: str
     candidates: Optional[list[str]] = None
 
@@ -27,58 +32,80 @@ class RankingRecord:
     rank_indices: Optional[list[int]] = None
 
 
+@dataclass
+class RerankResult:
+    documents: list[str]
+    indices: list[int]
+    record: Optional[RankingRecord] = None
+
+
 def _chunk_sequence(items: list[Any], chunk_size: int):
     for start in range(0, len(items), chunk_size):
         yield items[start:start + chunk_size]
 
 
-class Reranker(ABC):
+class RerankStrategy(ABC):
+    compatible_model_kind = "base"
+
+    def validate_ranking_model(self, ranking_func: BaseRankingPolicy) -> None:
+        model_kind = getattr(ranking_func, "model_kind", "base")
+        if model_kind != self.compatible_model_kind:
+            raise ValueError(
+                f"{self.__class__.__name__} expects a {self.compatible_model_kind} model, got {model_kind}."
+            )
 
     @abstractmethod
     def rerank(
         self,
         query: str,
         candidates: list[str],
-        ranking_func: Callable,
+        ranking_func: BaseRankingPolicy,
         return_record: bool = False,
-        return_indices: bool = False,
-        **kwargs: dict[str, Any]
-    ) -> tuple[list[str], list[int]]:
+        **kwargs: dict[str, Any],
+    ) -> RerankResult:
         pass
 
 
-class PointwiseReranker(Reranker):
+class Pointwise(RerankStrategy):
+    compatible_model_kind = "pointwise"
+
     def rerank(
         self,
         query: str,
         candidates: list[str],
-        ranking_func: Callable[[str, str], float],
+        ranking_func: PointwisePolicy,
         truncate_length: Optional[int] = None,
         batch_size: Optional[int] = None,
         return_record: bool = False,
-        return_indices: bool = False,
         **kwargs: dict[str, Any],
-    ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
+    ) -> RerankResult:
+        self.validate_ranking_model(ranking_func)
+
+        candidates_for_scoring = list(candidates)
+        record = None
         if return_record:
             record = RankingRecord(
                 query=query,
+                candidates=list(candidates),
                 num_processed_docs=len(candidates),
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
 
         if truncate_length:
-            candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
+            candidates_for_scoring = [
+                " ".join(candidate.split()[:truncate_length]) for candidate in candidates_for_scoring
+            ]
 
-        loglikelihoods = []
-        effective_batch_size = len(candidates) if batch_size is None else max(batch_size, 1)
+        scores = []
+        effective_batch_size = len(candidates_for_scoring) if batch_size is None else max(batch_size, 1)
         use_batch = (
-            len(candidates) > 0
+            len(candidates_for_scoring) > 0
             and getattr(ranking_func, "supports_batch", False)
             and hasattr(ranking_func, "score_many")
         )
         if use_batch:
-            for candidate_batch in _chunk_sequence(candidates, effective_batch_size):
+            for candidate_batch in _chunk_sequence(candidates_for_scoring, effective_batch_size):
                 if return_record:
                     batch_scores, lm_outputs = ranking_func.score_many(
                         query,
@@ -91,50 +118,56 @@ class PointwiseReranker(Reranker):
                     record.batch_sizes.append(len(candidate_batch))
                 else:
                     batch_scores = ranking_func.score_many(query, candidate_batch, **kwargs)
-                loglikelihoods.extend(batch_scores)
+                scores.extend(batch_scores)
         else:
-            for candidate in candidates:
+            for candidate in candidates_for_scoring:
                 if return_record:
-                    loglikelihood, lm_outputs = ranking_func(query, candidate, return_lm_outputs=True, **kwargs)
+                    score, lm_outputs = ranking_func(query, candidate, return_lm_outputs=True, **kwargs)
                     record.lm_outputs.append(lm_outputs)
                     record.num_lm_calls += 1
                     record.batch_sizes.append(1)
                 else:
-                    loglikelihood = ranking_func(query, candidate, **kwargs)
-                loglikelihoods.append(loglikelihood)
+                    score = ranking_func(query, candidate, **kwargs)
+                scores.append(score)
 
-        if len(loglikelihoods) == 0:
-            ranked_indices, ranked_result = [], []
+        if len(scores) == 0:
+            ranked_indices = []
+            ranked_result = []
         else:
-            ranked_indices, _ = zip(*sorted(enumerate(loglikelihoods), key=lambda x: x[1], reverse=True))
+            ranked_indices, _ = zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
+            ranked_indices = list(ranked_indices)
             ranked_result = [candidates[i] for i in ranked_indices]
 
-        outputs = (ranked_result,)
-        if return_indices:
-            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return outputs + (record,)
-        return outputs
+
+        return RerankResult(
+            documents=ranked_result,
+            indices=ranked_indices,
+            record=record,
+        )
 
 
-class PairwiseAllPairReranker(Reranker):
+class PairwiseAllPair(RerankStrategy):
+    compatible_model_kind = "pairwise"
 
     def rerank(
         self,
         query: str,
         candidates: list[str],
-        ranking_func: Callable[[str, str, str], int],
+        ranking_func: PairwisePolicy,
         pair_batch_size: Optional[int] = None,
         return_record: bool = False,
-        return_indices: bool = False,
         **kwargs: dict[str, Any],
-    ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
+    ) -> RerankResult:
+        self.validate_ranking_model(ranking_func)
 
+        record = None
         if return_record:
             record = RankingRecord(
                 query=query,
+                candidates=list(candidates),
                 num_processed_docs=len(candidates),
                 prompt_template=ranking_func._prompt_template,
             )
@@ -176,7 +209,13 @@ class PairwiseAllPairReranker(Reranker):
         else:
             for i, j in doc_pairs:
                 if return_record:
-                    res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
+                    res, lm_outputs = ranking_func(
+                        query,
+                        candidates[i],
+                        candidates[j],
+                        return_lm_outputs=True,
+                        **kwargs,
+                    )
                     record.num_processed_docs += 4
                     record.lm_outputs.append(lm_outputs)
                     record.num_lm_calls += 2
@@ -193,29 +232,33 @@ class PairwiseAllPairReranker(Reranker):
                     scores[j] += 0.5
 
         if len(scores) == 0:
-            ranked_indices, ranked_result = [], []
+            ranked_indices = []
+            ranked_result = []
         else:
             ranked_indices, _ = zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
+            ranked_indices = list(ranked_indices)
             ranked_result = [candidates[i] for i in ranked_indices]
 
-        outputs = (ranked_result,)
-        if return_indices:
-            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return outputs + (record,)
-        return outputs
+
+        return RerankResult(
+            documents=ranked_result,
+            indices=ranked_indices,
+            record=record,
+        )
 
 
-class PairwiseBubbleSortReranker(Reranker):
+class PairwiseBubbleSort(RerankStrategy):
+    compatible_model_kind = "pairwise"
 
     def _compare_pair(
         self,
         query: str,
         left_doc: str,
         right_doc: str,
-        ranking_func: Callable[[str, str, str], int],
+        ranking_func: PairwisePolicy,
         return_record: bool,
         record: Optional[RankingRecord],
         **kwargs,
@@ -233,65 +276,69 @@ class PairwiseBubbleSortReranker(Reranker):
         self,
         query: str,
         candidates: list[str],
-        ranking_func: Callable[[str, str, str], int],
+        ranking_func: PairwisePolicy,
         topk: int = 10,
         return_record: bool = False,
-        return_indices: bool = False,
         **kwargs: dict[str, Any],
-    ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
+    ) -> RerankResult:
+        self.validate_ranking_model(ranking_func)
 
+        ranked_docs = list(candidates)
+        ranked_indices = list(range(len(candidates)))
+        record = None
         if return_record:
             record = RankingRecord(
                 query=query,
+                candidates=list(candidates),
                 num_processed_docs=len(candidates),
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
 
-        last_end = len(candidates) - 1
-        ranked_indices = list(range(len(candidates)))
-        for i in range(min(topk, len(candidates))):
+        last_end = len(ranked_docs) - 1
+        for i in range(min(topk, len(ranked_docs))):
             changed = False
             for j in range(last_end, i, -1):
                 res = self._compare_pair(
                     query=query,
-                    left_doc=candidates[j],
-                    right_doc=candidates[j - 1],
+                    left_doc=ranked_docs[j],
+                    right_doc=ranked_docs[j - 1],
                     ranking_func=ranking_func,
                     return_record=return_record,
-                    record=record if return_record else None,
+                    record=record,
                     **kwargs,
                 )
 
                 if res > 0:
-                    candidates[j - 1], candidates[j] = candidates[j], candidates[j - 1]
+                    ranked_docs[j - 1], ranked_docs[j] = ranked_docs[j], ranked_docs[j - 1]
                     ranked_indices[j - 1], ranked_indices[j] = ranked_indices[j], ranked_indices[j - 1]
                     if not changed:
                         changed = True
-                        # skip unchanged pairs at the bottom
-                        if last_end != len(candidates) - 1:
+                        if last_end != len(ranked_docs) - 1:
                             last_end += 1
                 if not changed:
                     last_end -= 1
 
-        outputs = (candidates,)
-        if return_indices:
-            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return outputs + (record,)
-        return outputs
+
+        return RerankResult(
+            documents=ranked_docs,
+            indices=ranked_indices,
+            record=record,
+        )
 
 
-class PairwiseHeapSortReranker(Reranker):
+class PairwiseHeapSort(RerankStrategy):
+    compatible_model_kind = "pairwise"
 
     def _compare_pair(
         self,
         query: str,
         left_doc: str,
         right_doc: str,
-        ranking_func: Callable[[str, str, str], int],
+        ranking_func: PairwisePolicy,
         return_record: bool,
         record: Optional[RankingRecord],
         **kwargs,
@@ -309,97 +356,101 @@ class PairwiseHeapSortReranker(Reranker):
         self,
         query: str,
         candidates: list[str],
-        ranking_func: Callable[[str, str, str], int],
+        ranking_func: PairwisePolicy,
         topk: int = 10,
         return_record: bool = False,
-        return_indices: bool = False,
         **kwargs: dict[str, Any],
-    ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
+    ) -> RerankResult:
+        self.validate_ranking_model(ranking_func)
 
+        heap_docs = list(candidates)
+        ranked_indices = list(range(len(candidates)))
+        record = None
         if return_record:
             record = RankingRecord(
                 query=query,
+                candidates=list(candidates),
                 num_processed_docs=0,
                 prompt_template=ranking_func._prompt_template,
             )
             t = time.time()
 
-        ranked_indices = list(range(len(candidates)))
-
         def wrapped_ranking_func(i, j):
             return self._compare_pair(
                 query=query,
-                left_doc=candidates[i],
-                right_doc=candidates[j],
+                left_doc=heap_docs[i],
+                right_doc=heap_docs[j],
                 ranking_func=ranking_func,
                 return_record=return_record,
-                record=record if return_record else None,
+                record=record,
                 **kwargs,
             )
 
         def heapify(n, i):
-            # Find largest among root and children
             largest = i
-            l = 2 * i + 1
-            r = 2 * i + 2
-            if l < n and wrapped_ranking_func(l, i) > 0:
-                largest = l
-            if r < n and wrapped_ranking_func(r, largest) > 0:
-                largest = r
-            # If root is not largest, swap with largest and continue heapifying
+            left = 2 * i + 1
+            right = 2 * i + 2
+            if left < n and wrapped_ranking_func(left, i) > 0:
+                largest = left
+            if right < n and wrapped_ranking_func(right, largest) > 0:
+                largest = right
             if largest != i:
-                candidates[i], candidates[largest] = candidates[largest], candidates[i]
+                heap_docs[i], heap_docs[largest] = heap_docs[largest], heap_docs[i]
                 ranked_indices[i], ranked_indices[largest] = ranked_indices[largest], ranked_indices[i]
                 heapify(n, largest)
 
-        n = len(candidates)
-        # Build max heap
+        n = len(heap_docs)
         for i in range(n // 2, -1, -1):
             heapify(n, i)
         for i in range(n - 1, max(n - 1 - topk, 0), -1):
-            candidates[i], candidates[0] = candidates[0], candidates[i]
+            heap_docs[i], heap_docs[0] = heap_docs[0], heap_docs[i]
             ranked_indices[i], ranked_indices[0] = ranked_indices[0], ranked_indices[i]
-            # Heapify root element
             heapify(i, 0)
 
-        outputs = (reversed(candidates),)
-        if return_indices:
-            outputs += (reversed(ranked_indices),)
+        ranked_docs = list(reversed(heap_docs))
+        ranked_ids = list(reversed(ranked_indices))
         if return_record:
             record.latency = time.time() - t
-            record.rank_indices = reversed(ranked_indices)
-            return outputs + (record,)
-        return outputs
+            record.rank_indices = ranked_ids
+
+        return RerankResult(
+            documents=ranked_docs,
+            indices=ranked_ids,
+            record=record,
+        )
 
 
-class ListwiseSilidingWindowReranker(Reranker):
+class ListwiseSlidingWindow(RerankStrategy):
+    compatible_model_kind = "listwise"
+
     def rerank(
         self,
         query: str,
         candidates: list[str],
-        ranking_func: Callable[[str, list[str]], list[int]],
+        ranking_func: ListwisePolicy,
         rank_start: int = 0,
         rank_end: int = None,
         window_size: Optional[int] = None,
         step: int = 10,
         truncate_length: Optional[int] = None,
         return_record: bool = False,
-        return_indices: bool = False,
         **kwargs: dict[str, Any],
-    ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
+    ) -> RerankResult:
+        self.validate_ranking_model(ranking_func)
 
+        record = None
         if return_record:
             record = RankingRecord(
                 query=query,
+                candidates=list(candidates),
                 num_processed_docs=0,
                 prompt_template=ranking_func._prompt_template,
             )
         t = time.time()
 
+        ranked_result = list(candidates)
         if truncate_length:
-            candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
-
-        ranked_result = copy.deepcopy(candidates)
+            ranked_result = [" ".join(candidate.split()[:truncate_length]) for candidate in ranked_result]
         ranked_indices = list(range(len(candidates)))
 
         window_size = window_size or len(candidates)
@@ -407,16 +458,19 @@ class ListwiseSilidingWindowReranker(Reranker):
         start_pos, end_pos = rank_end - window_size, rank_end
         while end_pos > rank_start and start_pos + step != rank_start:
             start_pos = max(start_pos, rank_start)
-            # range from 0 to window_size
 
             if return_record:
-                permutation, lm_outputs = ranking_func(query, ranked_result[start_pos:end_pos], return_lm_outputs=True, **kwargs)
-                record.num_processed_docs += (end_pos - start_pos)
+                permutation, lm_outputs = ranking_func(
+                    query,
+                    ranked_result[start_pos:end_pos],
+                    return_lm_outputs=True,
+                    **kwargs,
+                )
+                record.num_processed_docs += end_pos - start_pos
                 record.lm_outputs.append(lm_outputs)
             else:
                 permutation = ranking_func(query, ranked_result[start_pos:end_pos], **kwargs)
 
-            # receive permutation
             cut_range = copy.deepcopy(ranked_result[start_pos:end_pos])
             cut_range_indices = copy.deepcopy(ranked_indices[start_pos:end_pos])
             for local_rank, index in enumerate(permutation):
@@ -425,65 +479,64 @@ class ListwiseSilidingWindowReranker(Reranker):
 
             start_pos, end_pos = start_pos - step, end_pos - step
 
-        outputs = (ranked_result,)
-        if return_indices:
-            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return outputs + (record,)
-        return outputs
+
+        return RerankResult(
+            documents=ranked_result,
+            indices=ranked_indices,
+            record=record,
+        )
 
 
-class TournamentReranker(Reranker):
+class Tournament(RerankStrategy):
+    compatible_model_kind = "selection"
+
     def rerank(
         self,
         query: str,
         candidates: list[str],
-        ranking_func: Callable[[str, str], float],
-        tuornament_times: int = 1,
+        ranking_func: SelectionPolicy,
+        tournament_times: int = 1,
         group_sizes: tuple[int] = (10, 10, 10, 10, 5),
         promotion_sizes: tuple[int] = (5, 4, 5, 5, 2),
-        stage_weight: float = 0.,
+        stage_weight: float = 0.0,
         truncate_length: Optional[int] = None,
-        return_record: bool = False, 
-        return_indices: bool = False,
+        return_record: bool = False,
         **kwargs: dict[str, Any],
-    ) -> Union[tuple[list[str], list[int]], tuple[list[str], list[int], RankingRecord]]:
+    ) -> RerankResult:
+        self.validate_ranking_model(ranking_func)
 
+        record = None
         if return_record:
             record = RankingRecord(
                 query=query,
+                candidates=list(candidates),
                 num_processed_docs=0,
                 prompt_template=ranking_func._prompt_template,
             )
         t = time.time()
 
-        assert len(group_sizes) == len(promotion_sizes)
+        if len(group_sizes) != len(promotion_sizes):
+            raise ValueError("group_sizes and promotion_sizes must have the same length.")
 
         if truncate_length:
             candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
 
         if len(candidates) == 0:
-            outputs = ([], )
-            if return_indices:
-                outputs += ([], )
-            if return_record:
-                outputs += (None, )
-            return outputs
+            return RerankResult(documents=[], indices=[], record=record)
 
         doc_scores = [0] * len(candidates)
 
-        for _ in range(tuornament_times):
-            # construct a random order of documents for the first stage
+        for _ in range(tournament_times):
             stage_ids = list(range(len(candidates)))
 
             for stage, (group_size, promotion_size) in enumerate(zip(group_sizes, promotion_sizes)):
-
                 num_groups = max(1, math.ceil(len(stage_ids) / group_size))
                 groups = [[] for _ in range(num_groups)]
-                for idx, v in enumerate(stage_ids):
-                    groups[idx % num_groups].append(v)
+                for idx, value in enumerate(stage_ids):
+                    groups[idx % num_groups].append(value)
 
                 new_stage = []
                 for group_candidate_ids in groups:
@@ -492,37 +545,45 @@ class TournamentReranker(Reranker):
 
                     random.shuffle(group_candidate_ids)
                     group_candidates = [candidates[i] for i in group_candidate_ids]
-                    k = min(len(group_candidate_ids), promotion_size)
-
-                    if k == 0:
-                        continue
 
                     if return_record:
-                        top_indices, lm_outputs = ranking_func(query, group_candidates, min(promotion_size, len(group_candidates)), return_lm_outputs=True, **kwargs)
+                        top_indices, lm_outputs = ranking_func(
+                            query,
+                            group_candidates,
+                            min(promotion_size, len(group_candidates)),
+                            return_lm_outputs=True,
+                            **kwargs,
+                        )
                         record.num_processed_docs += len(group_candidates)
                         record.lm_outputs.append(lm_outputs)
                     else:
-                        top_indices = ranking_func(query, group_candidates, min(promotion_size, len(group_candidates)), **kwargs)  # select top M form N candidates
+                        top_indices = ranking_func(
+                            query,
+                            group_candidates,
+                            min(promotion_size, len(group_candidates)),
+                            **kwargs,
+                        )
 
                     global_ids = [group_candidate_ids[i] for i in top_indices]
                     new_stage.extend(global_ids)
 
                     for gid in global_ids:
-                        doc_scores[gid] += (1 + stage * stage_weight)
+                        doc_scores[gid] += 1 + stage * stage_weight
 
                 stage_ids = sorted(new_stage, key=lambda x: doc_scores[x], reverse=True)
-
                 if len(stage_ids) <= 1:
                     break
 
         ranked_indices, _ = zip(*sorted(enumerate(doc_scores), key=lambda x: x[1], reverse=True))
+        ranked_indices = list(ranked_indices)
         ranked_result = [candidates[i] for i in ranked_indices]
 
-        outputs = (ranked_result,)
-        if return_indices:
-            outputs += (ranked_indices,)
         if return_record:
             record.latency = time.time() - t
             record.rank_indices = ranked_indices
-            return outputs + (record,)
-        return outputs
+
+        return RerankResult(
+            documents=ranked_result,
+            indices=ranked_indices,
+            record=record,
+        )

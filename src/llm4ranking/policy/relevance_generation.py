@@ -1,8 +1,8 @@
 import math
 from typing import Union
 
-from llm4ranking.lm.base import BatchLMOutput, LMOutput
-from llm4ranking.model.base import BaseRankingModel
+from llm4ranking.lm.base import BatchLMOutput, Capability, LMOutput
+from llm4ranking.policy.base import PointwisePolicy
 
 
 DEFAULT_PROMPT_TEMPLATE = """Document: {{ doc }}
@@ -13,7 +13,7 @@ Does the document answer the query?
 """
 
 
-class RelevanceGeneration(BaseRankingModel):
+class RelevanceGeneration(PointwisePolicy):
     """Pointwise relevance model that scores individual documents.
     
     This model evaluates each document independently by determining how well
@@ -23,9 +23,9 @@ class RelevanceGeneration(BaseRankingModel):
 
     DEFAULT_PROMPT_TEMPLATE = DEFAULT_PROMPT_TEMPLATE
 
-    ranker = "pointwise"
     name = "RelevanceGeneration"
     supports_batch = True
+    required_capabilities = {Capability.LOGITS, Capability.BATCH_LOGITS}
 
     def create_messages(
         self,
