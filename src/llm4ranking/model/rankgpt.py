@@ -71,6 +71,13 @@ class RankGPT(BaseRankingModel):
         ]
         return messages
 
+    def create_batch_messages(
+        self,
+        queries: list[str],
+        batch_candidates: list[list[str]],
+    ) -> list[list[dict[str, str]]]:
+        return [self.create_messages(query, candidates) for query, candidates in zip(queries, batch_candidates)]
+
     def parse_output(self, output: str, n: int) -> list[int]:
         """Parse the LM output into a ranking permutation.
 

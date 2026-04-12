@@ -1,7 +1,7 @@
 import math
 from typing import Union
 
-from llm4ranking.lm.base import LMOutput
+from llm4ranking.lm.base import BatchLMOutput, LMOutput
 from llm4ranking.model.base import BaseRankingModel
 
 
@@ -25,6 +25,7 @@ class RelevanceGeneration(BaseRankingModel):
 
     ranker = "pointwise"
     name = "RelevanceGeneration"
+    supports_batch = True
 
     def create_messages(
         self,
@@ -46,7 +47,13 @@ class RelevanceGeneration(BaseRankingModel):
         ]
         return messages
 
-    def __call__(self, query: str, doc: str, return_lm_outputs: bool = False) -> Union[float, tuple[float, LMOutput]]:
+    def __call__(
+        self,
+        query: str,
+        doc: str,
+        return_lm_outputs: bool = False,
+        **kwargs,
+    ) -> Union[float, tuple[float, LMOutput]]:
         """Score a document based on its relevance to the query.
 
         Args:
@@ -59,14 +66,50 @@ class RelevanceGeneration(BaseRankingModel):
                 Returns a relevance score (log likelihood of "Yes" response).
                 If return_lm_outputs is True, also returns the LM outputs.
         """
-        messages = self.create_messages(query, doc)
-        lm_outputs = self.lm.logits(messages, token=["yes", "no"])
-        yes_prob = math.exp(lm_outputs.logits[0])
-        no_prob = math.exp(lm_outputs.logits[1])
-        relevance_score = yes_prob / (yes_prob + no_prob)
+        scores, lm_outputs = self.score_many(
+            query,
+            [doc],
+            return_lm_outputs=True,
+            **kwargs,
+        )
         if return_lm_outputs:
-            return relevance_score, lm_outputs
-        return relevance_score
+            return scores[0], self._unwrap_batch_output(lm_outputs)
+        return scores[0]
+
+    def create_batch_messages(
+        self,
+        query: str,
+        docs: list[str],
+    ) -> list[list[dict[str, str]]]:
+        return [self.create_messages(query, doc) for doc in docs]
+
+    def parse_output(self, logits: list[float]) -> float:
+        yes_prob = math.exp(logits[0])
+        no_prob = math.exp(logits[1])
+        return yes_prob / (yes_prob + no_prob)
+
+    def parse_batch_outputs(self, lm_outputs: BatchLMOutput) -> list[float]:
+        return [self.parse_output(logits) for logits in (lm_outputs.logits or [])]
+
+    def score_many(
+        self,
+        query: str,
+        docs: list[str],
+        return_lm_outputs: bool = False,
+        **kwargs,
+    ) -> Union[list[float], tuple[list[float], BatchLMOutput]]:
+        lm_outputs = self.lm.logits_batch(
+            self.create_batch_messages(query, docs),
+            token=["yes", "no"],
+            **kwargs,
+        )
+        scores = self.parse_batch_outputs(lm_outputs)
+        if return_lm_outputs:
+            return scores, lm_outputs
+        return scores
+
+    def score_batch(self, *args, **kwargs):
+        return self.score_many(*args, **kwargs)
 
 
 class FineGrainedRelevanceGeneration(RelevanceGeneration):

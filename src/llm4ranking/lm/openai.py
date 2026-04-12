@@ -2,10 +2,12 @@ import os
 from typing import Optional, Union, List, Dict
 
 from openai import OpenAI
-from llm4ranking.lm.base import LM, LMOutput
+from llm4ranking.lm.base import BatchLMOutput, LM, LMOutput
 
 
 class OpenAIClient(LM):
+    supports_batch_generate = True
+
     def __init__(
         self,
         model: str,
@@ -44,19 +46,24 @@ class OpenAIClient(LM):
         messages: List[Dict[str, str]],
         **kwargs
     ) -> LMOutput:
-        
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_completion_tokens=kwargs.pop("max_completion_tokens", self.max_new_tokens),
-            **kwargs
-        )
+        batch_output = self.generate_batch([messages], **kwargs)
+        return LMOutput(text=batch_output.text[0])
 
-        generated_message = response.choices[0].message.content.strip()
-
-        return LMOutput(
-            text=generated_message,
-        )
+    def generate_batch(
+        self,
+        batch_messages: List[List[Dict[str, str]]],
+        **kwargs,
+    ) -> BatchLMOutput:
+        texts = []
+        for messages in batch_messages:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=kwargs.get("max_completion_tokens", self.max_new_tokens),
+                **{key: value for key, value in kwargs.items() if key != "max_completion_tokens"}
+            )
+            texts.append(response.choices[0].message.content.strip())
+        return BatchLMOutput(text=texts)
 
     def loglikelihood(self, **kwargs):
         raise NotImplementedError("OpenAI API does not support loglikelihood calculation")

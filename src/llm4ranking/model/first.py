@@ -71,3 +71,10 @@ class First(BaseRankingModel):
             {"role": "user", "content": self.prompt_template.render(query=query, candidates=candidates)}
         ]
         return messages
+
+    def create_batch_messages(
+        self,
+        queries: list[str],
+        batch_candidates: list[list[str]],
+    ) -> list[list[dict[str, str]]]:
+        return [self.create_messages(query, candidates) for query, candidates in zip(queries, batch_candidates)]

@@ -1,12 +1,18 @@
+import numpy as np
 import torch
 import transformers
 from typing import Optional, Union
 from peft import PeftModel
+from torch.nn.utils.rnn import pad_sequence
 
-from llm4ranking.lm.base import LM, LMOutput
+from llm4ranking.lm.base import BatchLMOutput, LM, LMOutput
 
 
 class HFLM(LM):
+    supports_batch_generate = True
+    supports_batch_loglikelihood = True
+    supports_batch_logits = True
+
     def __init__(
         self,
         model: Union[str, transformers.PreTrainedModel],
@@ -130,6 +136,11 @@ class HFLM(LM):
         self._max_length = max_length
         self._truncation = truncation
 
+        if self.tokenizer.pad_token_id is None:
+            if self.tokenizer.eos_token_id is None:
+                raise ValueError("Tokenizer must define either pad_token_id or eos_token_id for batching.")
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
     @property
     def max_length(self):
         if self._max_length:  # if max length manually set, return it
@@ -157,42 +168,31 @@ class HFLM(LM):
         messages: list[dict[str, str]],
         **kwargs
     ) -> LMOutput:
-        """Generate text from the model.
+        batch_outputs = self.generate_batch([messages], **kwargs)
+        return LMOutput(text=batch_outputs.text[0])
 
-        Args:
-            messages: The messages to generate from
-            return_num_tokens: Whether to return the number of tokens
-            **kwargs: Additional keyword arguments
+    def generate_batch(
+        self,
+        batch_messages: list[list[dict[str, str]]],
+        **kwargs,
+    ) -> BatchLMOutput:
+        if not batch_messages:
+            return BatchLMOutput(text=[])
 
-        Returns:
-            Either the generated text or a LMOutput object containing the text and the number of tokens
-        """
         max_new_tokens = kwargs.pop("max_new_tokens", self.max_new_tokens)
-        if "do_sample" in kwargs and kwargs["do_sample"] is False:
-            self.model.generation_config.temperature = None
-            self.model.generation_config.top_k = None
-            self.model.generation_config.top_p = None
-        input_ids = self.tokenizer.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            return_tensors="pt",
-            truncation=self._truncation,
-            max_length=self.max_length - max_new_tokens,
-            enable_thinking=False
-        ).to(self.device)
+        input_ids, attention_mask = self._prepare_generation_inputs(batch_messages, max_new_tokens=max_new_tokens)
         with torch.no_grad():
             outputs = self.model.generate(
                 input_ids=input_ids,
+                attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens,
                 use_cache=True,
-                # pad_token_id=self.tokenizer.eos_token_id,
-                **kwargs
-            )[0, input_ids.shape[-1]:].cpu()
-        output_text = self.tokenizer.decode(outputs, skip_special_tokens=True)
+                pad_token_id=self.tokenizer.pad_token_id,
+                **self._prepare_generation_kwargs(kwargs),
+            )[:, input_ids.shape[-1]:].cpu()
 
-        return LMOutput(
-            text=output_text,
-        )
+        output_texts = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        return BatchLMOutput(text=output_texts)
 
 
     def loglikelihood(
@@ -210,27 +210,37 @@ class HFLM(LM):
         Returns:
             Either the loglikelihood or a LMOutput object containing the loglikelihood and the number of tokens
         """
-        assert messages[-1]["role"] == "assistant", "Last message must be from the assistant"
-        assert len([m for m in messages if m["role"] == "assistant"]) == 1, "Only one assistant message allowed"
-        input_ids = self.tokenizer.apply_chat_template(
-            messages,
-            return_tensors="pt",
-            truncation=self._truncation,
-            max_length=self.max_length,
-            continue_final_message=True,  # this will remove the last eos token
-            enable_thinking=False
-        ).to(self.device)
-        labels = self._mask_labels(messages, input_ids.clone())[:, 1:]
-        with torch.no_grad():
-            logits = self.model(input_ids, **kwargs).logits[:, :-1, :].contiguous().float()
-            loglikelihood = -torch.nn.functional.cross_entropy(
-                logits.view(-1, logits.size(-1)),
-                labels.view(-1),
-            ).float().item()
-
+        batch_outputs = self.loglikelihood_batch([messages], **kwargs)
         return LMOutput(
-            text=messages[-1]["content"],
-            loglikelihood=loglikelihood,
+            text=batch_outputs.text[0],
+            loglikelihood=batch_outputs.loglikelihood[0],
+        )
+
+    def loglikelihood_batch(
+        self,
+        batch_messages: list[list[dict[str, str]]],
+        **kwargs,
+    ) -> BatchLMOutput:
+        if not batch_messages:
+            return BatchLMOutput(text=[], loglikelihood=[])
+
+        input_ids_list = [self._prepare_loglikelihood_input_ids(messages).squeeze(0) for messages in batch_messages]
+        labels_list = [
+            self._mask_labels(messages, input_ids.unsqueeze(0).clone())[:, 1:].squeeze(0)
+            for messages, input_ids in zip(batch_messages, input_ids_list)
+        ]
+        input_ids = pad_sequence(input_ids_list, batch_first=True, padding_value=self.tokenizer.pad_token_id).to(self.device)
+        labels = pad_sequence(labels_list, batch_first=True, padding_value=-100).to(self.device)
+        attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long()
+        loglikelihoods = self._compute_loglikelihoods(
+            input_ids=input_ids,
+            labels=labels,
+            attention_mask=attention_mask,
+            **kwargs,
+        )
+        return BatchLMOutput(
+            text=[messages[-1]["content"] for messages in batch_messages],
+            loglikelihood=loglikelihoods,
         )
 
     def logits(
@@ -249,29 +259,31 @@ class HFLM(LM):
         Returns:
             Either the logits of the last token of the input messages or a LMOutput object containing the logits and the number of tokens
         """
-        input_ids = self.tokenizer.apply_chat_template(
-            messages,
-            return_tensors="pt",
-            truncation=self._truncation,
-            max_length=self.max_length,
-            add_generation_prompt=True,
-            enable_thinking=False
-        ).to(self.device)
+        batch_outputs = self.logits_batch([messages], token=token, **kwargs)
+        return LMOutput(logits=batch_outputs.logits[0])
+
+    def logits_batch(
+        self,
+        batch_messages: list[list[dict[str, str]]],
+        token: Optional[Union[str, list[str]]] = None,
+        **kwargs,
+    ) -> BatchLMOutput:
+        if not batch_messages:
+            return BatchLMOutput(logits=[])
+
+        input_ids_list = [self._prepare_logits_input_ids(messages).squeeze(0) for messages in batch_messages]
+        input_ids = pad_sequence(input_ids_list, batch_first=True, padding_value=self.tokenizer.pad_token_id).to(self.device)
+        attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long()
         with torch.no_grad():
-            outputs = self.model(input_ids, **kwargs)
-            logits = outputs.logits[0, -1, :].detach().float().cpu().numpy()
-        if token:
-            if isinstance(token, str):
-                token_id = self.tokenizer.convert_tokens_to_ids(token)
-                logits = logits[token_id].item()
-            elif isinstance(token, list):
-                token_ids = self.tokenizer.convert_tokens_to_ids(token)
-                logits = [logits[token_id].item() for token_id in token_ids]
-            else:
-                raise ValueError(f"Token must be a string or a list of strings, not {type(token)}")
-        return LMOutput(
-            logits=logits,
-        )
+            outputs = self.model(input_ids, attention_mask=attention_mask, **kwargs)
+            logits = outputs.logits.detach().float().cpu()
+
+        last_indices = attention_mask.sum(dim=-1).cpu() - 1
+        batch_logits = []
+        for batch_idx, last_idx in enumerate(last_indices.tolist()):
+            one_logits = logits[batch_idx, last_idx, :].numpy()
+            batch_logits.append(self._filter_logits(one_logits, token))
+        return BatchLMOutput(logits=batch_logits)
 
     def _mask_labels(
         self, 
@@ -293,3 +305,109 @@ class HFLM(LM):
             messages, add_generation_prompt=True,
             return_tensors="pt", truncation=self._truncation,
         ).shape[1]
+
+    def _prepare_generation_kwargs(self, kwargs: dict) -> dict:
+        kwargs = dict(kwargs)
+        if kwargs.get("do_sample") is False:
+            self.model.generation_config.temperature = None
+            self.model.generation_config.top_k = None
+            self.model.generation_config.top_p = None
+        return kwargs
+
+    def _prepare_generation_inputs(
+        self,
+        batch_messages: list[list[dict[str, str]]],
+        max_new_tokens: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        input_ids_list = [
+            self.tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                truncation=self._truncation,
+                max_length=self.max_length - max_new_tokens,
+                enable_thinking=False,
+            ).squeeze(0)
+            for messages in batch_messages
+        ]
+        max_len = max(input_ids.size(0) for input_ids in input_ids_list)
+        padded_input_ids = []
+        padded_attention_mask = []
+        for input_ids in input_ids_list:
+            pad_len = max_len - input_ids.size(0)
+            if pad_len > 0:
+                padding = torch.full((pad_len,), self.tokenizer.pad_token_id, dtype=input_ids.dtype)
+                input_ids = torch.cat([padding, input_ids], dim=0)
+                attention_mask = torch.cat(
+                    [
+                        torch.zeros(pad_len, dtype=torch.long),
+                        torch.ones(input_ids.size(0) - pad_len, dtype=torch.long),
+                    ],
+                    dim=0,
+                )
+            else:
+                attention_mask = torch.ones_like(input_ids, dtype=torch.long)
+            padded_input_ids.append(input_ids)
+            padded_attention_mask.append(attention_mask)
+        return (
+            torch.stack(padded_input_ids, dim=0).to(self.device),
+            torch.stack(padded_attention_mask, dim=0).to(self.device),
+        )
+
+    def _prepare_loglikelihood_input_ids(self, messages: list[dict[str, str]]) -> torch.Tensor:
+        return self.tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt",
+            truncation=self._truncation,
+            max_length=self.max_length,
+            continue_final_message=True,
+            enable_thinking=False,
+        )
+
+    def _prepare_logits_input_ids(self, messages: list[dict[str, str]]) -> torch.Tensor:
+        return self.tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt",
+            truncation=self._truncation,
+            max_length=self.max_length,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+
+    def _compute_loglikelihoods(
+        self,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor,
+        attention_mask: torch.Tensor,
+        **kwargs,
+    ) -> list[float]:
+        input_ids = input_ids.to(self.device)
+        labels = labels.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+        with torch.no_grad():
+            logits = self.model(input_ids, attention_mask=attention_mask, **kwargs).logits[:, :-1, :].contiguous().float()
+            losses = torch.nn.functional.cross_entropy(
+                logits.transpose(1, 2),
+                labels,
+                ignore_index=-100,
+                reduction="none",
+            )
+        valid_mask = labels.ne(-100)
+        token_counts = valid_mask.sum(dim=-1).clamp(min=1)
+        loss_sums = (losses * valid_mask).sum(dim=-1)
+        return (-(loss_sums / token_counts)).cpu().tolist()
+
+    def _filter_logits(
+        self,
+        logits: np.ndarray,
+        token: Optional[Union[str, list[str]]],
+    ) -> Union[np.ndarray, float, list[float]]:
+        if token is None:
+            return logits
+        if isinstance(token, str):
+            token_id = self.tokenizer.convert_tokens_to_ids(token)
+            return float(logits[token_id].item())
+        if isinstance(token, list):
+            token_ids = self.tokenizer.convert_tokens_to_ids(token)
+            return [float(logits[token_id].item()) for token_id in token_ids]
+        raise ValueError(f"Token must be a string or a list of strings, not {type(token)}")

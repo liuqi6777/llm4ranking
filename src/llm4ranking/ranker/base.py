@@ -1,13 +1,13 @@
 import copy
+import math
 import random
 import time
-import math
 from abc import ABC, abstractmethod
 from typing import Optional, Callable, Any, Union, List
 from itertools import combinations
 from dataclasses import dataclass, field
 
-from llm4ranking.lm.base import LMOutput
+from llm4ranking.lm.base import BatchLMOutput, LMOutput
 
 
 @dataclass
@@ -20,9 +20,16 @@ class RankingRecord:
     num_processed_docs: Optional[int] = None
     latency: Optional[float] = None
 
-    lm_outputs: list[LMOutput] = field(default_factory=list)
+    lm_outputs: list[Any] = field(default_factory=list)
+    num_lm_calls: int = 0
+    batch_sizes: list[int] = field(default_factory=list)
 
     rank_indices: Optional[list[int]] = None
+
+
+def _chunk_sequence(items: list[Any], chunk_size: int):
+    for start in range(0, len(items), chunk_size):
+        yield items[start:start + chunk_size]
 
 
 class Reranker(ABC):
@@ -47,6 +54,7 @@ class PointwiseReranker(Reranker):
         candidates: list[str],
         ranking_func: Callable[[str, str], float],
         truncate_length: Optional[int] = None,
+        batch_size: Optional[int] = None,
         return_record: bool = False,
         return_indices: bool = False,
         **kwargs: dict[str, Any],
@@ -63,13 +71,37 @@ class PointwiseReranker(Reranker):
             candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in candidates]
 
         loglikelihoods = []
-        for candidate in candidates:
-            if return_record:
-                loglikelihood, lm_outputs = ranking_func(query, candidate, return_lm_outputs=True, **kwargs)
-                record.lm_outputs.append(lm_outputs)
-            else:
-                loglikelihood = ranking_func(query, candidate, **kwargs)
-            loglikelihoods.append(loglikelihood)
+        effective_batch_size = len(candidates) if batch_size is None else max(batch_size, 1)
+        use_batch = (
+            len(candidates) > 0
+            and getattr(ranking_func, "supports_batch", False)
+            and hasattr(ranking_func, "score_many")
+        )
+        if use_batch:
+            for candidate_batch in _chunk_sequence(candidates, effective_batch_size):
+                if return_record:
+                    batch_scores, lm_outputs = ranking_func.score_many(
+                        query,
+                        candidate_batch,
+                        return_lm_outputs=True,
+                        **kwargs,
+                    )
+                    record.lm_outputs.append(lm_outputs)
+                    record.num_lm_calls += 1
+                    record.batch_sizes.append(len(candidate_batch))
+                else:
+                    batch_scores = ranking_func.score_many(query, candidate_batch, **kwargs)
+                loglikelihoods.extend(batch_scores)
+        else:
+            for candidate in candidates:
+                if return_record:
+                    loglikelihood, lm_outputs = ranking_func(query, candidate, return_lm_outputs=True, **kwargs)
+                    record.lm_outputs.append(lm_outputs)
+                    record.num_lm_calls += 1
+                    record.batch_sizes.append(1)
+                else:
+                    loglikelihood = ranking_func(query, candidate, **kwargs)
+                loglikelihoods.append(loglikelihood)
 
         if len(loglikelihoods) == 0:
             ranked_indices, ranked_result = [], []
@@ -94,6 +126,7 @@ class PairwiseAllPairReranker(Reranker):
         query: str,
         candidates: list[str],
         ranking_func: Callable[[str, str, str], int],
+        pair_batch_size: Optional[int] = None,
         return_record: bool = False,
         return_indices: bool = False,
         **kwargs: dict[str, Any],
@@ -109,25 +142,61 @@ class PairwiseAllPairReranker(Reranker):
 
         doc_pairs = list(combinations(range(len(candidates)), 2))
         scores = [0] * len(candidates)
-        for i, j in doc_pairs:
+        effective_batch_size = len(doc_pairs) if pair_batch_size is None else max(pair_batch_size, 1)
+        use_batch = (
+            len(doc_pairs) > 0
+            and getattr(ranking_func, "supports_batch", False)
+            and hasattr(ranking_func, "compare_many")
+        )
+        if use_batch:
+            for pair_batch in _chunk_sequence(doc_pairs, effective_batch_size):
+                text_pairs = [(candidates[i], candidates[j]) for i, j in pair_batch]
+                if return_record:
+                    batch_scores, lm_outputs = ranking_func.compare_many(
+                        query,
+                        text_pairs,
+                        return_lm_outputs=True,
+                        **kwargs,
+                    )
+                    record.num_processed_docs += 4 * len(pair_batch)
+                    record.lm_outputs.append(lm_outputs)
+                    record.num_lm_calls += 2
+                    record.batch_sizes.extend([len(pair_batch), len(pair_batch)])
+                else:
+                    batch_scores = ranking_func.compare_many(query, text_pairs, **kwargs)
 
-            if return_record:
-                res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
-                record.num_processed_docs += 4
-                record.lm_outputs.append(lm_outputs)
-            else:
-                res = ranking_func(query, candidates[i], candidates[j], **kwargs)
+                for (i, j), res in zip(pair_batch, batch_scores):
+                    if res > 0:
+                        scores[i] += 1
+                    elif res < 0:
+                        scores[j] += 1
+                    else:
+                        scores[i] += 0.5
+                        scores[j] += 0.5
+        else:
+            for i, j in doc_pairs:
+                if return_record:
+                    res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
+                    record.num_processed_docs += 4
+                    record.lm_outputs.append(lm_outputs)
+                    record.num_lm_calls += 2
+                    record.batch_sizes.extend([1, 1])
+                else:
+                    res = ranking_func(query, candidates[i], candidates[j], **kwargs)
 
-            if res > 0:
-                scores[i] += 1
-            elif res < 0:
-                scores[j] += 1
-            else:
-                scores[i] += 0.5
-                scores[j] += 0.5
+                if res > 0:
+                    scores[i] += 1
+                elif res < 0:
+                    scores[j] += 1
+                else:
+                    scores[i] += 0.5
+                    scores[j] += 0.5
 
-        ranked_indices, _ = zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
-        ranked_result = [candidates[i] for i in ranked_indices]
+        if len(scores) == 0:
+            ranked_indices, ranked_result = [], []
+        else:
+            ranked_indices, _ = zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
+            ranked_result = [candidates[i] for i in ranked_indices]
 
         outputs = (ranked_result,)
         if return_indices:
@@ -140,6 +209,25 @@ class PairwiseAllPairReranker(Reranker):
 
 
 class PairwiseBubbleSortReranker(Reranker):
+
+    def _compare_pair(
+        self,
+        query: str,
+        left_doc: str,
+        right_doc: str,
+        ranking_func: Callable[[str, str, str], int],
+        return_record: bool,
+        record: Optional[RankingRecord],
+        **kwargs,
+    ):
+        if return_record:
+            res, lm_outputs = ranking_func(query, left_doc, right_doc, return_lm_outputs=True, **kwargs)
+            record.num_processed_docs += 4
+            record.lm_outputs.append(lm_outputs)
+            record.num_lm_calls += 2
+            record.batch_sizes.extend([1, 1])
+            return res
+        return ranking_func(query, left_doc, right_doc, **kwargs)
 
     def rerank(
         self,
@@ -165,13 +253,15 @@ class PairwiseBubbleSortReranker(Reranker):
         for i in range(min(topk, len(candidates))):
             changed = False
             for j in range(last_end, i, -1):
-
-                if return_record:
-                    res, lm_outputs = ranking_func(query, candidates[j], candidates[j - 1], return_lm_outputs=True, **kwargs)
-                    record.num_processed_docs += 4
-                    record.lm_outputs.append(lm_outputs)
-                else:
-                    res = ranking_func(query, candidates[j], candidates[j - 1], **kwargs)
+                res = self._compare_pair(
+                    query=query,
+                    left_doc=candidates[j],
+                    right_doc=candidates[j - 1],
+                    ranking_func=ranking_func,
+                    return_record=return_record,
+                    record=record if return_record else None,
+                    **kwargs,
+                )
 
                 if res > 0:
                     candidates[j - 1], candidates[j] = candidates[j], candidates[j - 1]
@@ -196,6 +286,25 @@ class PairwiseBubbleSortReranker(Reranker):
 
 class PairwiseHeapSortReranker(Reranker):
 
+    def _compare_pair(
+        self,
+        query: str,
+        left_doc: str,
+        right_doc: str,
+        ranking_func: Callable[[str, str, str], int],
+        return_record: bool,
+        record: Optional[RankingRecord],
+        **kwargs,
+    ):
+        if return_record:
+            res, lm_outputs = ranking_func(query, left_doc, right_doc, return_lm_outputs=True, **kwargs)
+            record.num_processed_docs += 4
+            record.lm_outputs.append(lm_outputs)
+            record.num_lm_calls += 2
+            record.batch_sizes.extend([1, 1])
+            return res
+        return ranking_func(query, left_doc, right_doc, **kwargs)
+
     def rerank(
         self,
         query: str,
@@ -218,13 +327,15 @@ class PairwiseHeapSortReranker(Reranker):
         ranked_indices = list(range(len(candidates)))
 
         def wrapped_ranking_func(i, j):
-            if return_record:
-                res, lm_outputs = ranking_func(query, candidates[i], candidates[j], return_lm_outputs=True, **kwargs)
-                record.num_processed_docs += 4
-                record.lm_outputs.append(lm_outputs)
-            else:
-                res = ranking_func(query, candidates[i], candidates[j], **kwargs)
-            return res
+            return self._compare_pair(
+                query=query,
+                left_doc=candidates[i],
+                right_doc=candidates[j],
+                ranking_func=ranking_func,
+                return_record=return_record,
+                record=record if return_record else None,
+                **kwargs,
+            )
 
         def heapify(n, i):
             # Find largest among root and children

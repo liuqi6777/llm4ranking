@@ -82,6 +82,17 @@ class TourRankSelection(BaseRankingModel):
         ]
         return messages
 
+    def create_batch_messages(
+        self,
+        queries: list[str],
+        batch_candidates: list[list[str]],
+        num_selections: list[int],
+    ) -> list[list[dict[str, str]]]:
+        return [
+            self.create_messages(query, candidates, num_selection)
+            for query, candidates, num_selection in zip(queries, batch_candidates, num_selections)
+        ]
+
     def parse_output(self, output: str, n: int, N: int) -> list[int]:
         """Parse the LM output into selected document indices.
 
