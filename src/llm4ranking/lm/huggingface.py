@@ -71,36 +71,6 @@ class HFLM(LM):
                 **kwargs,
             )
 
-            if peft and delta:
-                raise ValueError(
-                    "Cannot use both 'peft' and 'delta' options at the same time."
-                )
-
-            if peft:
-                if self._model.config.vocab_size != len(self.tokenizer):
-                    # resize model for LoRAs with added tokens
-                    self._model.resize_token_embeddings(len(self.tokenizer))
-                self._model = PeftModel.from_pretrained(
-                    self._model, peft, revision=revision
-                )
-            elif delta:
-                _model_delta = transformers.AutoModelForCausalLM.from_pretrained(
-                    delta,
-                    revision=revision,
-                    torch_dtype=dtype,
-                    trust_remote_code=trust_remote_code,
-                    **kwargs,
-                )
-                for name, param in self._model.state_dict().items():
-                    try:
-                        param.data += _model_delta.state_dict()[name]
-                    except KeyError:
-                        raise KeyError(f"Delta model is missing weights for layer: {name}")
-                    except Exception as e:
-                        raise RuntimeError(
-                            f"Failed to add delta weights to layer {name}. Error: {e}"
-                        )
-
         elif isinstance(model, transformers.PreTrainedModel):
             self.model = model
         else:
@@ -126,6 +96,36 @@ class HFLM(LM):
                 revision=revision,
                 trust_remote_code=trust_remote_code,
             )
+
+        if peft and delta:
+            raise ValueError(
+                "Cannot use both 'peft' and 'delta' options at the same time."
+            )
+
+        if peft:
+            if self.model.config.vocab_size != len(self.tokenizer):
+                # Resize model for LoRAs with added tokens.
+                self.model.resize_token_embeddings(len(self.tokenizer))
+            self.model = PeftModel.from_pretrained(
+                self.model, peft, revision=revision
+            )
+        elif delta:
+            model_delta = transformers.AutoModelForCausalLM.from_pretrained(
+                delta,
+                revision=revision,
+                torch_dtype=dtype,
+                trust_remote_code=trust_remote_code,
+                **kwargs,
+            )
+            for name, param in self.model.state_dict().items():
+                try:
+                    param.data += model_delta.state_dict()[name]
+                except KeyError:
+                    raise KeyError(f"Delta model is missing weights for layer: {name}")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to add delta weights to layer {name}. Error: {e}"
+                    )
 
         self._max_length = max_length
         self._truncation = truncation
