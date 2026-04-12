@@ -2,11 +2,13 @@ import argparse
 import ast
 import collections
 import datetime
+import hashlib
 import json
 import os
 import random
 import tempfile
 from dataclasses import asdict
+from statistics import mean
 from tqdm import tqdm
 from datasets import load_dataset
 
@@ -22,6 +24,8 @@ def evaluate(
     order: str = "initial",
     max_samples: int = None,
     output_dir: str = None,
+    run_config: dict | None = None,
+    reuse_predictions: bool = True,
 ):
 
     results = {}
@@ -61,20 +65,67 @@ def evaluate(
             else:
                 excluded_ids = None
 
-            rerank_results = []
-            records = []
-            for i in tqdm(range(len(data))):
+            rerank_results = [None] * len(data)
+            records = [None] * len(data)
+            predictions_file = None
+            resumed_count = 0
+            config_signature = build_config_signature(run_config)
+
+            if output_dir is not None:
+                predictions_file = os.path.join(
+                    output_dir,
+                    f"predictions_{dataset}_top{topk}.jsonl"
+                )
+                if not reuse_predictions and os.path.exists(predictions_file):
+                    os.remove(predictions_file)
+                completed_predictions = {}
+                if reuse_predictions:
+                    completed_predictions = load_existing_predictions(
+                        predictions_file=predictions_file,
+                        data=data,
+                        config_signature=config_signature,
+                    )
+                    for i, prediction in completed_predictions.items():
+                        rerank_results[i] = {
+                            "query": data[i]["query"],
+                            "hits": [data[i]["hits"][j] for j in prediction["rerank_indices"]],
+                        }
+                        records[i] = prediction["record"]
+                    resumed_count = len(completed_predictions)
+            else:
+                completed_predictions = {}
+
+            pending_indices = [i for i in range(len(data)) if i not in completed_predictions]
+
+            for i in tqdm(pending_indices):
                 _, rerank_indices, outputs = rerank(
                     query=data[i]["query"],
                     candidates=[x["content"] for x in data[i]["hits"]],
                     return_indices=True,
                     return_record=True
                 )
-                rerank_results.append({
+                record = asdict(outputs) if outputs else None
+                rerank_result = {
                     "query": data[i]["query"],
                     "hits": [data[i]["hits"][j] for j in rerank_indices]
-                })
-                records.append(asdict(outputs) if outputs else None)
+                }
+                rerank_results[i] = rerank_result
+                records[i] = record
+
+                if predictions_file is not None:
+                    append_prediction(
+                        predictions_file=predictions_file,
+                        entry=build_prediction_entry(
+                            sample_idx=i,
+                            sample=data[i],
+                            rerank_indices=list(rerank_indices),
+                            record=record,
+                            config_signature=config_signature,
+                        ),
+                    )
+
+            rerank_results = [item for item in rerank_results if item is not None]
+            records = [item for item in records if item is not None]
 
             if output_dir is not None:
                 os.makedirs(output_dir, exist_ok=True)
@@ -105,6 +156,13 @@ def evaluate(
 
             results[dataset] = {}
             results[dataset]["metrics"] = metrics
+            results[dataset]["summary"] = build_summary(
+                total_queries=len(data),
+                completed_queries=len(rerank_results),
+                resumed_queries=resumed_count,
+                records=records,
+                predictions_file=predictions_file,
+            )
         except Exception as e:
             raise e
 
@@ -123,6 +181,7 @@ def simple_evaluate(
     model_fw_args: dict = {},
     prompt_template: str = None,
     output_dir: str = None,
+    reuse_predictions: bool = True,
 ):
     reranker = Reranker(
         reranking_approach=reranking_approach,
@@ -140,7 +199,20 @@ def simple_evaluate(
         retriever=retriever,
         topk=topk,
         order=order,
-        output_dir=output_dir
+        output_dir=output_dir,
+        reuse_predictions=reuse_predictions,
+        run_config={
+            "model_type": model_type,
+            "model_args": model_args,
+            "datasets": datasets,
+            "reranking_approach": reranking_approach,
+            "retriever": retriever,
+            "topk": topk,
+            "order": order,
+            "reranking_args": reranking_args,
+            "model_fw_args": model_fw_args,
+            "prompt_template": prompt_template,
+        },
     )
 
 
@@ -171,6 +243,93 @@ def write_results(rerank_results, file_obj):
         for j, hit in enumerate(hits):
             file_obj.write(f"{hit['qid']} Q{i} {hit['docid']} {j + 1} {round(1 / (j + 1), 3)} rank")
             file_obj.write("\n")
+
+
+def build_config_signature(run_config: dict | None) -> str:
+    payload = json.dumps(run_config or {}, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def build_prediction_signature(sample: dict) -> str:
+    payload = {
+        "query": sample["query"],
+        "docids": [hit["docid"] for hit in sample["hits"]],
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def build_prediction_entry(
+    sample_idx: int,
+    sample: dict,
+    rerank_indices: list[int],
+    record: dict | None,
+    config_signature: str,
+) -> dict:
+    return {
+        "sample_idx": sample_idx,
+        "query": sample["query"],
+        "qid": sample["hits"][0]["qid"] if sample["hits"] else None,
+        "num_candidates": len(sample["hits"]),
+        "rerank_indices": rerank_indices,
+        "ranked_docids": [sample["hits"][idx]["docid"] for idx in rerank_indices],
+        "prediction_signature": build_prediction_signature(sample),
+        "config_signature": config_signature,
+        "record": record,
+    }
+
+
+def append_prediction(predictions_file: str, entry: dict):
+    with open(predictions_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False))
+        f.write("\n")
+
+
+def load_existing_predictions(
+    predictions_file: str,
+    data: list[dict],
+    config_signature: str,
+) -> dict[int, dict]:
+    if not os.path.exists(predictions_file):
+        return {}
+
+    completed_predictions = {}
+    with open(predictions_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            prediction = json.loads(line)
+            sample_idx = prediction["sample_idx"]
+            if sample_idx >= len(data):
+                continue
+            if prediction.get("config_signature") != config_signature:
+                continue
+            if prediction.get("prediction_signature") != build_prediction_signature(data[sample_idx]):
+                continue
+            completed_predictions[sample_idx] = prediction
+    return completed_predictions
+
+
+def build_summary(
+    total_queries: int,
+    completed_queries: int,
+    resumed_queries: int,
+    records: list[dict | None],
+    predictions_file: str | None,
+) -> dict:
+    latencies = [
+        record["latency"] for record in records
+        if record is not None and record.get("latency") is not None
+    ]
+    return {
+        "total_queries": total_queries,
+        "completed_queries": completed_queries,
+        "resumed_queries": resumed_queries,
+        "newly_computed_queries": completed_queries - resumed_queries,
+        "avg_latency": round(mean(latencies), 4) if latencies else None,
+        "total_latency": round(sum(latencies), 4) if latencies else None,
+        "predictions_file": predictions_file,
+    }
 
 
 def parse_dict_args(args_string: str):
@@ -209,7 +368,8 @@ def main(args):
         reranking_args=args.reranking_args,
         model_fw_args=args.model_fw_args,
         prompt_template=args.prompt_template,
-        output_dir=output_dir
+        output_dir=output_dir,
+        reuse_predictions=not args.overwrite,
     )
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:
