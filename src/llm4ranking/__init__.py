@@ -27,6 +27,11 @@ def list_available_reranking_approaches() -> List[str]:
     return list(RERANKING_APPROACHES.keys())
 
 
+def list_reranking_models() -> List[str]:
+    """Backward-compatible alias for listing reranking approaches."""
+    return list_available_reranking_approaches()
+
+
 def get_default_args_by_approach(approach: str) -> Dict:
     """Get default arguments for each reranking approach.
 

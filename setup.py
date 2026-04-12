@@ -15,7 +15,18 @@ setup(
     description='',
     python_requires='>=3.10',
     install_requires=[
+        'torch>=2.1.0',
         'accelerate>=1.0.1',
         'transformers>=4.46.0',
-    ]
+        'datasets>=2.20.0',
+        'openai>=1.0.0',
+        'pytrec_eval>=0.5',
+        'bm25s>=0.2.0',
+        'ujson>=5.10.0',
+        'peft>=0.12.0',
+        'jinja2>=3.1.0',
+    ],
+    extras_require={
+        'vllm': ['vllm>=0.6.0'],
+    },
 )
