@@ -44,7 +44,7 @@ class DataCollatorForPointwise:
 
     def __call__(self, instances: Sequence[list]) -> dict[str, torch.Tensor]:
         messages = [message for instance in instances for message in instance]
-        input_ids = self.tokenizer.apply_chat_template(
+        model_inputs = self.tokenizer.apply_chat_template(
             messages, 
             padding=True, padding_side="left",
             max_length=256, truncation=True,
@@ -52,8 +52,11 @@ class DataCollatorForPointwise:
             add_generation_prompt=True,
             enable_thinking=False,
             return_dict=True
-        ).input_ids
-        return dict(input_ids=input_ids)
+        )
+        return dict(
+            input_ids=model_inputs.input_ids,
+            attention_mask=model_inputs.attention_mask,
+        )
 
 
 class DistillationDataset(Dataset):
@@ -85,7 +88,7 @@ class DataCollatorForDistillation:
     def __call__(self, instances: Sequence[list]) -> dict[str, torch.Tensor]:
         messages, ranking = tuple([instance[key] for instance in instances] for key in ("messages", "ranking"))
         messages = [message for instance in messages for message in instance]
-        input_ids = self.tokenizer.apply_chat_template(
+        model_inputs = self.tokenizer.apply_chat_template(
             messages,
             padding=True, padding_side="left",
             max_length=256, truncation=True,
@@ -93,10 +96,11 @@ class DataCollatorForDistillation:
             add_generation_prompt=True,
             enable_thinking=False,
             return_dict=True
-        ).input_ids
+        )
         ranking = torch.tensor(ranking, dtype=torch.long) - 1  # make zero-indexed
         return dict(
-            input_ids=input_ids,
+            input_ids=model_inputs.input_ids,
+            attention_mask=model_inputs.attention_mask,
             ranking=ranking,
         )
 
@@ -106,7 +110,7 @@ def make_data_module(tokenizer, data_args):
          train_dataset = PointwiseDataset(data_path=data_args.data_path, num_negatives=data_args.num_negatives)
          eval_dataset = None
          if data_args.eval_data_path:
-             eval_dataset = PointwiseDataset(data_path=data_args.eval_data_path, tokenizer=tokenizer)
+             eval_dataset = PointwiseDataset(data_path=data_args.eval_data_path, num_negatives=data_args.num_negatives)
          data_collator = DataCollatorForPointwise(tokenizer)
     elif data_args.data_type == "listwise":
         train_dataset = DistillationDataset(data_path=data_args.data_path)

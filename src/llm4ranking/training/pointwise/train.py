@@ -54,23 +54,28 @@ def main():
     model.train()
 
     data_module = make_data_module(tokenizer, data_args)
-    train_dataset = data_module['train_dataset']
-    data_collator = data_module['data_collator']
+    num_docs_per_query = data_args.num_negatives + 1
 
     class PointwiseTrainer(Trainer):
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-            outputs = model(input_ids=inputs["input_ids"])
+            outputs = model(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs.get("attention_mask"),
+            )
             logits = outputs.logits[:, -1, :]
-            # p_yes = torch.exp(logits[:, yes_loc])
-            # p_no = torch.exp(logits[:, no_loc])
-            # scores = (p_yes / (p_yes + p_no)).reshape(self.args.per_device_train_batch_size, -1)
             if "ranking" not in inputs:
-                scores = torch.softmax(logits[:, [yes_loc, no_loc]], dim=-1)[:, 0].view(batch_size, slate_length)
-                targets = torch.zeros(scores.shape[0], dtype=torch.long, device=scores.device)
+                if logits.shape[0] % num_docs_per_query != 0:
+                    raise ValueError(
+                        f"Expected batch size to be divisible by {num_docs_per_query}, got {logits.shape[0]}."
+                    )
+                batch_size = logits.shape[0] // num_docs_per_query
+                scores = torch.softmax(logits[:, [yes_loc, no_loc]], dim=-1)[:, 0].view(
+                    batch_size, num_docs_per_query
+                )
+                targets = torch.zeros(batch_size, dtype=torch.long, device=scores.device)
                 loss = torch.nn.functional.cross_entropy(scores / 0.1, targets, reduction='mean')
             else:
                 batch_size, slate_length = inputs["ranking"].shape
-                assert batch_size == self.args.per_device_train_batch_size
                 rank_position = torch.empty_like(inputs["ranking"], device=inputs["ranking"].device, dtype=torch.long)
                 rank_indices = torch.arange(slate_length, device=inputs["ranking"].device).expand(batch_size, -1)
                 rank_position.scatter_(dim=1, index=inputs["ranking"], src=rank_indices)
@@ -86,8 +91,7 @@ def main():
     trainer = PointwiseTrainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset,
-        data_collator=data_collator,
+        **data_module,
     )
 
     # Train
