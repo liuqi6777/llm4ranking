@@ -1,4 +1,5 @@
 import argparse
+import ast
 import collections
 import datetime
 import json
@@ -177,7 +178,7 @@ def parse_dict_args(args_string: str):
     for arg in args_string.split(","):
         key, value = arg.strip().split("=")
         try:
-            args[key] = eval(value)
+            args[key] = ast.literal_eval(value)
         except Exception:
             args[key] = value
     return args
