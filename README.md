@@ -15,16 +15,30 @@ pip install -e .
 
 To illustrate the fundamental functionality of our framework, we provide a minimal usage example that can rerank documents using just a few lines of code:
 ```python
-from llm4ranking import Reranker
+from llm4ranking import BackendRuntimeArgs, Reranker, StrategyRuntimeArgs
 
 reranker = Reranker(
     reranking_approach="rankgpt",
-    model_type="openai", model_name="gpt-4o"
+    model_type="openai",
+    model_name="gpt-4o",
 )
-reranker.rerank(
+
+result = reranker.rerank(
     query="query text",
-    candidates: ["doc0", "doc1", "doc2", ...],
+    candidates=["doc0", "doc1", "doc2"],
+    strategy=StrategyRuntimeArgs(
+        return_record=True,
+        window_size=20,
+        step=10,
+    ),
+    backend=BackendRuntimeArgs(
+        max_completion_tokens=128,
+        temperature=0,
+    ),
 )
+
+print(result.documents)
+print(result.indices)
 ```
 
 ### Supported LLMs
@@ -39,9 +53,9 @@ python -m llm4ranking.list_reranking_models
 ```
 or running the following code:
 ```python
-from llm4ranking import list_reranking_models
+from llm4ranking import list_available_reranking_approaches
 
-list_reranking_models()
+list_available_reranking_approaches()
 ```
 More details are coming soon. You can refer to [Awesome-LLM4Ranking](https://github.com/liuqi6777/Awesome-LLM4Ranking) for more information.
 
@@ -57,11 +71,11 @@ model=Qwen/Qwen2.5-7B-Instruct
 
 python -m llm4ranking.evaluation.evaluator \
   --model_type hf \
-  --model_args model=$model \
+  --model_args model='$model' \
   --reranking_approach rankgpt \
-  --reranking_args window_size=20,step=10,truncate_length=300 \
+  --strategy_args window_size=20,step=10,truncate_length=300 \
   --datasets dl19 \
-  --model_fw_args do_sample=False,max_new_tokens=128 \
+  --backend_args do_sample=False,max_new_tokens=128 \
   --topk 20
 ```
 
