@@ -1,7 +1,7 @@
 #!/bin/bash
 
 torchrun src/llm4ranking/training/listwise/train.py \
-    --deepspeed scripts/zero2.json \
+    --deepspeed scripts/ds_zero2.json \
     --model_name_or_path Qwen/Qwen2.5-0.5B-Instruct \
     --data_path ./toy_data/listwise_train.jsonl \
     --bf16 True \

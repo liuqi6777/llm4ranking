@@ -1,9 +1,9 @@
 #!/bin/bash
 
-torchrun src/llm4ranking/training/logits/train.py \
+torchrun src/llm4ranking/training/pointwise/train.py \
     --deepspeed scripts/ds_zero3.json \
     --model_name_or_path Qwen/Qwen2.5-0.5B-Instruct \
-    --data_path ./data/pointwise_train.jsonl \
+    --data_path ./toy_data/pointwise_train.jsonl \
     --bf16 True \
     --tf32 True \
     --output_dir "path/to/your/checkpoints" \
