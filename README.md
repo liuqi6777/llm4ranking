@@ -22,7 +22,7 @@ reranker = Reranker(
     model_type="openai", model_name="gpt-4o"
 )
 reranker.rerank(
-    query: "query text",
+    query="query text",
     candidates: ["doc0", "doc1", "doc2", ...],
 )
 ```
