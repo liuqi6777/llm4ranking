@@ -1,7 +1,7 @@
 from typing import Union
 
 from llm4ranking.lm.base import Capability, LMOutput
-from llm4ranking.policy.base import ListwisePolicy
+from llm4ranking.policy.base import ListwisePolicy, PolicyResult
 
 
 DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} documents, each indicated by a alphabelt identifier. Rank the passages based on their relevance to the search query. All the passages should be listed using identifiers in descending order of relevance. Search Query: {{ query }}.
@@ -22,13 +22,13 @@ class First(ListwisePolicy):
     name = "FIRST"
     required_capabilities = {Capability.LOGITS}
 
-    def __call__(
+    def rank(
         self,
         query: str,
         candidates: list[str],
         return_lm_outputs: bool = False,
         **kwargs
-    ) -> Union[list[int], tuple[list[int], LMOutput]]:
+    ) -> Union[list[int], PolicyResult[list[int]]]:
         """Rank the candidaes using logit scores.
 
         Args:
@@ -50,7 +50,7 @@ class First(ListwisePolicy):
         logit_for_each_candidate = [logits[i] for i in token_ids]
         ranking = sorted(range(len(logit_for_each_candidate)), key=lambda i: logit_for_each_candidate[i], reverse=True)
         if return_lm_outputs:
-            return ranking, lm_outputs
+            return self.make_result(ranking, lm_outputs)
         return ranking
 
     def create_messages(

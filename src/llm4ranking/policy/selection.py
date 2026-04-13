@@ -2,7 +2,7 @@ import re
 from typing import Union
 
 from llm4ranking.lm.base import Capability, LMOutput
-from llm4ranking.policy.base import SelectionPolicy
+from llm4ranking.policy.base import SelectionPolicy, PolicyResult
 
 
 DEFAULT_PROMPT_TEMPLATE = """I will provide you with the given query and {{ candidates|length }} documents, each indicated by a numerical identifier [].
@@ -31,14 +31,14 @@ class TourRankSelection(SelectionPolicy):
     name = "TourRank"
     required_capabilities = {Capability.GENERATE}
 
-    def __call__(
+    def select(
         self,
         query: str,
         candidates: list[str],
         num_selection: int,
         return_lm_outputs: bool = False,
         **kwargs
-    ) -> Union[list[int], tuple[list[int], LMOutput]]:
+    ) -> Union[list[int], PolicyResult[list[int]]]:
         """Select the most relevant documents from a candidate set.
 
         Args:
@@ -57,7 +57,7 @@ class TourRankSelection(SelectionPolicy):
         lm_outputs = self.lm.generate(messages, **kwargs)
         seleted_idx = self.parse_output(lm_outputs.text, num_selection, len(candidates))
         if return_lm_outputs:
-            return seleted_idx, lm_outputs
+            return self.make_result(seleted_idx, lm_outputs)
         return seleted_idx
 
     def create_messages(
@@ -104,10 +104,10 @@ class TourRankSelection(SelectionPolicy):
             list[int]: Indices of selected documents
         """
         idxs = [int(idx) - 1 for idx in re.findall(r"\[(\d+)\]", output)]
-        idxs = [x for x in idxs if x < N]
+        idxs = [x for x in idxs if 0 <= x < N]
         if len(idxs) > n:
             idxs = idxs[:n]
         if len(idxs) < n:
-            idxs += [x for x in range(n) if x not in idxs][:n - len(idxs)]
+            idxs += [x for x in range(N) if x not in idxs][:n - len(idxs)]
         assert len(idxs) == n
         return idxs

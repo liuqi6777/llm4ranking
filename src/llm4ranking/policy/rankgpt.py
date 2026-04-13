@@ -2,7 +2,7 @@ import re
 from typing import Union
 
 from llm4ranking.lm.base import Capability, LMOutput
-from llm4ranking.policy.base import ListwisePolicy
+from llm4ranking.policy.base import ListwisePolicy, PolicyResult
 
 
 DEFAULT_PROMPT_TEMPLATE = """I will provide you with {{ candidates|length }} passages, each indicated by a numerical identifier []. Rank the passages based on their relevance to the search query: {{ query }}.
@@ -26,13 +26,13 @@ class RankGPT(ListwisePolicy):
     name = "RankGPT"
     required_capabilities = {Capability.GENERATE}
 
-    def __call__(
+    def rank(
         self,
         query: str,
         candidates: list[str],
         return_lm_outputs: bool = False,
         **kwargs
-    ) -> Union[list[int], tuple[list[int], LMOutput]]:
+    ) -> Union[list[int], PolicyResult[list[int]]]:
         """Generate a ranking for the candidate documents.
 
         Args:
@@ -49,7 +49,7 @@ class RankGPT(ListwisePolicy):
         lm_outputs = self.lm.generate(messages, **kwargs)
         permutation = self.parse_output(lm_outputs.text, len(candidates))
         if return_lm_outputs:
-            return permutation, lm_outputs
+            return self.make_result(permutation, lm_outputs)
         return permutation
 
     def create_messages(

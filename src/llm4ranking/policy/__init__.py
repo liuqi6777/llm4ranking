@@ -2,6 +2,7 @@ from llm4ranking.policy.base import (
     BaseRankingPolicy,
     ListwisePolicy,
     PairwisePolicy,
+    PolicyResult,
     PointwisePolicy,
     SelectionPolicy,
 )

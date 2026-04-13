@@ -1,7 +1,7 @@
 from typing import Union
 
 from llm4ranking.lm.base import BatchLMOutput, Capability, LMOutput
-from llm4ranking.policy.base import PointwisePolicy
+from llm4ranking.policy.base import PointwisePolicy, PolicyResult
 
 
 DEFAULT_PROMPT_TEMPLATE = """Please write a question based on this document.
@@ -45,13 +45,13 @@ class QueryGeneration(PointwisePolicy):
         ]
         return messages
 
-    def __call__(
+    def score(
         self,
         query: str,
         doc: str,
         return_lm_outputs: bool = False,
         **kwargs,
-    ) -> Union[float, tuple[float, LMOutput]]:
+    ) -> Union[float, PolicyResult[float]]:
         """Score a document by measuring how well it generates the target query.
 
         This method uses the language model's likelihood of generating the original query
@@ -67,15 +67,15 @@ class QueryGeneration(PointwisePolicy):
                 Returns the log likelihood score of generating the query.
                 If return_lm_outputs is True, also returns the LM outputs.
         """
-        scores, lm_outputs = self.score_many(
+        result = self.score_many(
             query,
             [doc],
             return_lm_outputs=True,
             **kwargs,
         )
         if return_lm_outputs:
-            return scores[0], self._unwrap_batch_output(lm_outputs)
-        return scores[0]
+            return self.make_result(result.value[0], self._unwrap_batch_output(result.lm_outputs))
+        return result.value[0]
 
     def create_batch_messages(
         self,
@@ -93,12 +93,9 @@ class QueryGeneration(PointwisePolicy):
         docs: list[str],
         return_lm_outputs: bool = False,
         **kwargs,
-    ) -> Union[list[float], tuple[list[float], BatchLMOutput]]:
+    ) -> Union[list[float], PolicyResult[list[float]]]:
         lm_outputs = self.lm.loglikelihood_batch(self.create_batch_messages(query, docs), **kwargs)
         scores = self.parse_batch_outputs(lm_outputs)
         if return_lm_outputs:
-            return scores, lm_outputs
+            return self.make_result(scores, lm_outputs)
         return scores
-
-    def score_batch(self, *args, **kwargs):
-        return self.score_many(*args, **kwargs)

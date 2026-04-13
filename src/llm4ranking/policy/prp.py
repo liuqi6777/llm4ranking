@@ -1,7 +1,8 @@
+import re
 from typing import Union
 
 from llm4ranking.lm.base import BatchLMOutput, Capability, LMOutput
-from llm4ranking.policy.base import PairwisePolicy
+from llm4ranking.policy.base import PairwisePolicy, PolicyResult
 
 
 DEFAULT_PROMPT_TEMPLATE = """Given a query: {{ query }}, which of the following two documents is more relevant to the query?
@@ -27,14 +28,14 @@ class PRP(PairwisePolicy):
     supports_batch = True
     required_capabilities = {Capability.GENERATE, Capability.BATCH_GENERATE}
 
-    def __call__(
+    def compare(
         self,
         query: str,
         doc1: str,
         doc2: str,
         return_lm_outputs: bool = False,
         **kwargs,
-    ) -> Union[int, tuple[int, LMOutput]]:
+    ) -> Union[int, PolicyResult[int]]:
         """Compare two documents and determine which is more relevant.
 
         Args:
@@ -49,7 +50,7 @@ class PRP(PairwisePolicy):
                 Returns 1 if doc1 is more relevant, -1 if doc2 is more relevant, 0 if tied.
                 If return_lm_outputs is True, also returns the LM outputs.
         """
-        scores, lm_outputs = self.compare_many(
+        result = self.compare_many(
             query,
             [(doc1, doc2)],
             return_lm_outputs=True,
@@ -58,13 +59,13 @@ class PRP(PairwisePolicy):
         if return_lm_outputs:
             lm_outputs = LMOutput(
                 text=[
-                    lm_outputs["forward"].text[0],
-                    lm_outputs["reverse"].text[0],
+                    result.lm_outputs["forward"].text[0],
+                    result.lm_outputs["reverse"].text[0],
                 ]
             )
-            return scores[0], lm_outputs
+            return self.make_result(result.value[0], lm_outputs)
 
-        return scores[0]
+        return result.value[0]
 
     def create_batch_messages(
         self,
@@ -99,7 +100,7 @@ class PRP(PairwisePolicy):
         doc_pairs: list[tuple[str, str]],
         return_lm_outputs: bool = False,
         **kwargs,
-    ) -> Union[list[int], tuple[list[int], dict[str, BatchLMOutput]]]:
+    ) -> Union[list[int], PolicyResult[list[int]]]:
         forward_outputs = self.lm.generate_batch(
             self.create_batch_messages(query, doc_pairs, reverse=False),
             **kwargs,
@@ -110,11 +111,8 @@ class PRP(PairwisePolicy):
         )
         scores = self.parse_batch_outputs(forward_outputs, reverse_outputs)
         if return_lm_outputs:
-            return scores, {"forward": forward_outputs, "reverse": reverse_outputs}
+            return self.make_result(scores, {"forward": forward_outputs, "reverse": reverse_outputs})
         return scores
-
-    def compare_batch(self, *args, **kwargs):
-        return self.compare_many(*args, **kwargs)
 
     def create_messages(
         self,
@@ -146,4 +144,10 @@ class PRP(PairwisePolicy):
         Returns:
             str: 'a' or 'b' indicating which document was preferred
         """
-        return output.strip().lower()[0]
+        if not isinstance(output, str):
+            return ""
+
+        match = re.search(r"\b([ab])\b", output.strip().lower())
+        if match is None:
+            return ""
+        return match.group(1)

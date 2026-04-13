@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from llm4ranking.config import (
@@ -10,17 +11,95 @@ from llm4ranking.policy import *
 from llm4ranking.strategy import *
 
 
-RERANKING_APPROACHES = {
-    "rankgpt": (ListwiseSlidingWindow, RankGPT),
-    "rel-gen": (Pointwise, RelevanceGeneration),
-    "query-gen": (Pointwise, QueryGeneration),
-    "prp-heap": (PairwiseHeapSort, PRP),
-    "prp-allpair": (PairwiseAllPair, PRP),
-    "prp-bubble": (PairwiseBubbleSort, PRP),
-    "tourrank": (Tournament, TourRankSelection),
-    "first": (ListwiseSlidingWindow, First),
-    "fg-rel-gen": (Pointwise, FineGrainedRelevanceGeneration),
+@dataclass(frozen=True)
+class ApproachSpec:
+    strategy_cls: type[RerankStrategy]
+    policy_cls: type[BaseRankingPolicy]
+    default_strategy_args: dict = field(default_factory=dict)
+    allowed_strategy_args: frozenset[str] = field(default_factory=frozenset)
+
+
+BACKEND_ARG_NAMES = frozenset(BackendRuntimeArgs.__dataclass_fields__.keys())
+
+DEFAULT_ALLOWED_STRATEGY_ARGS_BY_CLASS = {
+    Pointwise: frozenset({"return_record", "truncate_length", "batch_size"}),
+    PairwiseAllPair: frozenset({"return_record", "pair_batch_size"}),
+    PairwiseHeapSort: frozenset({"return_record", "topk"}),
+    PairwiseBubbleSort: frozenset({"return_record", "topk"}),
+    ListwiseSlidingWindow: frozenset({"return_record", "rank_start", "rank_end", "window_size", "step", "truncate_length"}),
+    Tournament: frozenset(
+        {"return_record", "tournament_times", "group_sizes", "promotion_sizes", "stage_weight", "truncate_length"}
+    ),
 }
+
+
+RERANKING_APPROACHES = {
+    "rankgpt": ApproachSpec(
+        strategy_cls=ListwiseSlidingWindow,
+        policy_cls=RankGPT,
+        default_strategy_args={"window_size": 20, "step": 10, "truncate_length": 300},
+        allowed_strategy_args=frozenset({"return_record", "rank_start", "rank_end", "window_size", "step", "truncate_length"}),
+    ),
+    "rel-gen": ApproachSpec(
+        strategy_cls=Pointwise,
+        policy_cls=RelevanceGeneration,
+        allowed_strategy_args=frozenset({"return_record", "truncate_length", "batch_size"}),
+    ),
+    "query-gen": ApproachSpec(
+        strategy_cls=Pointwise,
+        policy_cls=QueryGeneration,
+        allowed_strategy_args=frozenset({"return_record", "truncate_length", "batch_size"}),
+    ),
+    "prp-heap": ApproachSpec(
+        strategy_cls=PairwiseHeapSort,
+        policy_cls=PRP,
+        default_strategy_args={"topk": 10},
+        allowed_strategy_args=frozenset({"return_record", "topk"}),
+    ),
+    "prp-allpair": ApproachSpec(
+        strategy_cls=PairwiseAllPair,
+        policy_cls=PRP,
+        allowed_strategy_args=frozenset({"return_record", "pair_batch_size"}),
+    ),
+    "prp-bubble": ApproachSpec(
+        strategy_cls=PairwiseBubbleSort,
+        policy_cls=PRP,
+        default_strategy_args={"topk": 10},
+        allowed_strategy_args=frozenset({"return_record", "topk"}),
+    ),
+    "tourrank": ApproachSpec(
+        strategy_cls=Tournament,
+        policy_cls=TourRankSelection,
+        default_strategy_args={"tournament_times": 1, "truncate_length": 300},
+        allowed_strategy_args=frozenset(
+            {"return_record", "tournament_times", "group_sizes", "promotion_sizes", "stage_weight", "truncate_length"}
+        ),
+    ),
+    "first": ApproachSpec(
+        strategy_cls=ListwiseSlidingWindow,
+        policy_cls=First,
+        default_strategy_args={"window_size": 20, "step": 10, "truncate_length": 300},
+        allowed_strategy_args=frozenset({"return_record", "rank_start", "rank_end", "window_size", "step", "truncate_length"}),
+    ),
+    "fg-rel-gen": ApproachSpec(
+        strategy_cls=Pointwise,
+        policy_cls=FineGrainedRelevanceGeneration,
+        allowed_strategy_args=frozenset({"return_record", "truncate_length", "batch_size"}),
+    ),
+}
+
+
+def get_approach_spec(approach: str) -> ApproachSpec:
+    value = RERANKING_APPROACHES[approach]
+    if isinstance(value, ApproachSpec):
+        return value
+
+    strategy_cls, policy_cls = value
+    return ApproachSpec(
+        strategy_cls=strategy_cls,
+        policy_cls=policy_cls,
+        allowed_strategy_args=DEFAULT_ALLOWED_STRATEGY_ARGS_BY_CLASS.get(strategy_cls, frozenset()),
+    )
 
 
 def list_available_reranking_approaches() -> List[str]:
@@ -28,17 +107,9 @@ def list_available_reranking_approaches() -> List[str]:
 
 
 def get_default_args_by_approach(approach: str) -> Dict:
-    defaults = {
-        "rankgpt": {"window_size": 20, "step": 10, "truncate_length": 300},
-        "rel-gen": {},
-        "query-gen": {},
-        "prp-heap": {"topk": 10},
-        "prp-allpair": {},
-        "prp-bubble": {"topk": 10},
-        "tourrank": {"tournament_times": 1, "truncate_length": 300},
-        "first": {"window_size": 20, "step": 10, "truncate_length": 300},
-    }
-    return defaults.get(approach, {})
+    if approach not in RERANKING_APPROACHES:
+        return {}
+    return dict(get_approach_spec(approach).default_strategy_args)
 
 
 class Reranker:
@@ -95,6 +166,7 @@ class Reranker:
             **get_default_args_by_approach(reranking_approach),
             **dict(strategy_args or {}),
         }
+        self._validate_strategy_args(self._strategy_kwargs)
         self._backend_kwargs = dict(backend_args or {})
         self.config = RerankerConfig(
             reranking_approach=reranking_approach,
@@ -108,9 +180,9 @@ class Reranker:
             prompt_template=prompt_template,
         )
 
-        strategy_cls, policy_cls = RERANKING_APPROACHES[reranking_approach]
-        self.strategy = strategy_cls()
-        self.policy = policy_cls(model_type, model_args, prompt_template)
+        approach_spec = get_approach_spec(reranking_approach)
+        self.strategy = approach_spec.strategy_cls()
+        self.policy = approach_spec.policy_cls(model_type, model_args, prompt_template)
 
     @classmethod
     def from_config(cls, config: RerankerConfig) -> "Reranker":
@@ -141,6 +213,14 @@ class Reranker:
     ) -> dict:
         strategy_runtime_kwargs = strategy.as_kwargs() if strategy is not None else {}
         backend_runtime_kwargs = backend.as_kwargs() if backend is not None else {}
+        override_strategy_kwargs = {
+            key: value for key, value in override_kwargs.items()
+            if key not in BACKEND_ARG_NAMES
+        }
+        self._validate_strategy_args({
+            **override_strategy_kwargs,
+            **strategy_runtime_kwargs,
+        })
         return {
             **self._strategy_kwargs,
             **self._backend_kwargs,
@@ -148,6 +228,19 @@ class Reranker:
             **strategy_runtime_kwargs,
             **backend_runtime_kwargs,
         }
+
+    def _validate_strategy_args(self, strategy_args: dict) -> None:
+        spec = get_approach_spec(self.reranking_approach)
+        invalid_args = sorted(set(strategy_args) - set(spec.allowed_strategy_args))
+        if not invalid_args:
+            return
+
+        allowed_args = ", ".join(sorted(spec.allowed_strategy_args))
+        invalid_args_display = ", ".join(invalid_args)
+        raise ValueError(
+            f"Unsupported strategy args for approach '{self.reranking_approach}': {invalid_args_display}. "
+            f"Allowed args: {allowed_args}"
+        )
 
     @staticmethod
     def _normalize_init_args(
