@@ -205,7 +205,7 @@ class HFLM(LM):
 
     def loglikelihood(
         self,
-        messages: dict[str, str],
+        messages: list[dict[str, str]],
         **kwargs
     ) -> LMOutput:
         """Get the loglikelihood of the model.
@@ -253,7 +253,7 @@ class HFLM(LM):
 
     def logits(
         self,
-        messages: dict[str, str],
+        messages: list[dict[str, str]],
         token: Optional[str] = None,
         **kwargs
     ) -> LMOutput:

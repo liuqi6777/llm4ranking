@@ -56,7 +56,7 @@ class RankGPT(ListwisePolicy):
         self,
         query: str,
         candidates: list[str],
-    ) -> str:
+    ) -> list[dict[str, str]]:
         """Create the prompt messages for the LM.
 
         Args:
@@ -64,7 +64,7 @@ class RankGPT(ListwisePolicy):
             candidates (list[str]): List of documents to rank
 
         Returns:
-            str: Formatted prompt messages
+            list[dict[str, str]]: Formatted prompt messages
         """
         messages = [
             {"role": "user", "content": self.prompt_template.render(query=query, candidates=candidates)}

@@ -65,7 +65,7 @@ class TourRankSelection(SelectionPolicy):
         query: str,
         candidates: list[str],
         num_selection: int,
-    ) -> str:
+    ) -> list[dict[str, str]]:
         """Create prompt messages for document selection.
 
         Args:
@@ -74,7 +74,7 @@ class TourRankSelection(SelectionPolicy):
             num_selection (int): Number of documents to select
 
         Returns:
-            str: Formatted prompt messages
+            list[dict[str, str]]: Formatted prompt messages
         """
         messages = [
             {"role": "user", "content": self.prompt_template.render(

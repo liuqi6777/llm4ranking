@@ -31,7 +31,7 @@ class RelevanceGeneration(PointwisePolicy):
         self,
         query: str,
         doc: str,
-    ) -> str:
+    ) -> list[dict[str, str]]:
         """Create prompt messages for relevance assessment.
 
         Args:
@@ -39,7 +39,7 @@ class RelevanceGeneration(PointwisePolicy):
             doc (str): Document to evaluate
 
         Returns:
-            str: Formatted prompt messages
+            list[dict[str, str]]: Formatted prompt messages
         """
         messages = [
             {"role": "user", "content": self.prompt_template.render(doc=doc, query=query)},
@@ -84,8 +84,9 @@ class RelevanceGeneration(PointwisePolicy):
         return [self.create_messages(query, doc) for doc in docs]
 
     def parse_output(self, logits: list[float]) -> float:
-        yes_prob = math.exp(logits[0])
-        no_prob = math.exp(logits[1])
+        max_logit = max(logits)
+        yes_prob = math.exp(logits[0] - max_logit)
+        no_prob = math.exp(logits[1] - max_logit)
         return yes_prob / (yes_prob + no_prob)
 
     def parse_batch_outputs(self, lm_outputs: BatchLMOutput) -> list[float]:

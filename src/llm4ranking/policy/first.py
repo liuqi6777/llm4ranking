@@ -57,7 +57,7 @@ class First(ListwisePolicy):
         self,
         query: str,
         candidates: list[str],
-    ) -> list[dict]:
+    ) -> list[dict[str, str]]:
         """Create messages for each candidate.
 
         Args:
@@ -65,7 +65,7 @@ class First(ListwisePolicy):
             candidates: List of candidate texts to rank
 
         Returns:
-            List of messages, one per candidate
+            list[dict[str, str]]: List of messages, one per candidate
         """
         messages = [
             {"role": "user", "content": self.prompt_template.render(query=query, candidates=candidates)}

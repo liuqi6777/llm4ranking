@@ -62,14 +62,14 @@ class VLLM(LM):
 
     def loglikelihood(
         self,
-        messages: dict[str, str],
+        messages: list[dict[str, str]],
         **kwargs
     ) -> Union[float, LMOutput]:
         raise NotImplementedError("loglikelihood is not supported for vLLM engine.")
 
     def logits(
         self,
-        messages: dict[str, str],
+        messages: list[dict[str, str]],
         **kwargs
     ) -> torch.Tensor:
         raise NotImplementedError("logits is not supported for vLLM engine.")

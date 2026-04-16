@@ -1,6 +1,6 @@
 from typing import Union
 
-from llm4ranking.lm.base import BatchLMOutput, Capability, LMOutput
+from llm4ranking.lm.base import BatchLMOutput, Capability
 from llm4ranking.policy.base import PointwisePolicy, PolicyResult
 
 
@@ -29,7 +29,7 @@ class QueryGeneration(PointwisePolicy):
         self,
         query: str,
         doc: str,
-    ) -> str:
+    ) -> list[dict[str, str]]:
         """Create prompt messages for query generation.
 
         Args:
@@ -37,7 +37,7 @@ class QueryGeneration(PointwisePolicy):
             doc (str): Document to generate query from
 
         Returns:
-            str: Formatted prompt messages with both system instruction and expected response
+            list[dict[str, str]]: Formatted prompt messages with both system instruction and expected response
         """
         messages = [
             {"role": "user", "content": self.prompt_template.render(doc=doc)},

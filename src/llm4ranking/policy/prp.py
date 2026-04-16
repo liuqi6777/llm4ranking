@@ -119,7 +119,7 @@ class PRP(PairwisePolicy):
         query: str,
         doc1: str,
         doc2: str,
-    ) -> str:
+    ) -> list[dict[str, str]]:
         """Create prompt messages for comparing two documents.
 
         Args:
@@ -128,7 +128,7 @@ class PRP(PairwisePolicy):
             doc2 (str): Second document
 
         Returns:
-            str: Formatted prompt messages
+            list[dict[str, str]]: Formatted prompt messages
         """
         messages = [
             {"role": "user", "content": self.prompt_template.render(query=query, doc1=doc1, doc2=doc2)}

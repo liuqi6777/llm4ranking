@@ -63,15 +63,15 @@ class LM(ABC):
             )
 
     @abstractmethod
-    def generate(self, messages: dict[str, str], **kwargs) -> Union[str, LMOutput]:
+    def generate(self, messages: list[dict[str, str]], **kwargs) -> Union[str, LMOutput]:
         pass
 
     @abstractmethod
-    def loglikelihood(self, messages: dict[str, str], **kwargs) -> Union[float, LMOutput]:
+    def loglikelihood(self, messages: list[dict[str, str]], **kwargs) -> Union[float, LMOutput]:
         pass
 
     @abstractmethod
-    def logits(self, messages: dict[str, str], **kwargs) -> Union[np.ndarray, LMOutput]:
+    def logits(self, messages: list[dict[str, str]], **kwargs) -> Union[np.ndarray, LMOutput]:
         pass
 
     def generate_batch(
