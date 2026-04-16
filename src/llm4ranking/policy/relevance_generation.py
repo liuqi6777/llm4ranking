@@ -116,5 +116,49 @@ class FineGrainedRelevanceGeneration(RelevanceGeneration):
     it answers the query. It uses a 5-point scale relevance judgment approach
     and the log likelihood of the selected response is used as a relevance score.
     """
+    DEFAULT_PROMPT_TEMPLATE = """Document: {{ doc }}
 
-    pass
+Query: {{ query }}
+
+Rate the document's relevance to the query on a 5-point scale:
+0 = not relevant
+1 = slightly relevant
+2 = somewhat relevant
+3 = relevant
+4 = highly relevant
+
+Relevance:"""
+
+    name = "FineGrainedRelevanceGeneration"
+    LABEL_TOKENS = ["0", "1", "2", "3", "4"]
+    LABEL_VALUES = [0.0, 1.0, 2.0, 3.0, 4.0]
+
+    def parse_output(self, logits: list[float]) -> float:
+        if not logits:
+            return 0.0
+
+        max_logit = max(logits)
+        exp_logits = [math.exp(logit - max_logit) for logit in logits]
+        partition = sum(exp_logits)
+        if partition == 0:
+            return 0.0
+
+        probabilities = [value / partition for value in exp_logits]
+        return sum(label * prob for label, prob in zip(self.LABEL_VALUES, probabilities))
+
+    def score_many(
+        self,
+        query: str,
+        docs: list[str],
+        return_lm_outputs: bool = False,
+        **kwargs,
+    ) -> Union[list[float], PolicyResult[list[float]]]:
+        lm_outputs = self.lm.logits_batch(
+            self.create_batch_messages(query, docs),
+            token=self.LABEL_TOKENS,
+            **kwargs,
+        )
+        scores = self.parse_batch_outputs(lm_outputs)
+        if return_lm_outputs:
+            return self.make_result(scores, lm_outputs)
+        return scores
