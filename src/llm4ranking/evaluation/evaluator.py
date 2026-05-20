@@ -37,8 +37,12 @@ def evaluate(
     for dataset in datasets:
         try:
             print(f"Evaluating dataset {dataset}...")
-            
-            data = load_dataset("liuqi6777/retrieval_results", data_files=f"{retriever}/{dataset}_top100.jsonl", split="train").to_list()
+
+            data = load_dataset(
+                "liuqi6777/retrieval_results",
+                data_files=f"{retriever}/{dataset}_top100.jsonl",
+                split="train",
+            ).to_list()
 
             results[dataset] = {}
             if max_samples is not None:
@@ -58,10 +62,10 @@ def evaluate(
 
             if dataset.startswith("bright"):
                 task_name = dataset.removeprefix("bright-").replace("-", "_")
-                examples = load_dataset('xlangai/bright', 'examples')[task_name]
+                examples = load_dataset("xlangai/bright", "examples")[task_name]
                 excluded_ids = {}
                 for e in examples:
-                    excluded_ids[e['id']] = e['excluded_ids']
+                    excluded_ids[e["id"]] = e["excluded_ids"]
             else:
                 excluded_ids = None
 
@@ -73,8 +77,7 @@ def evaluate(
 
             if output_dir is not None:
                 predictions_file = os.path.join(
-                    output_dir,
-                    f"predictions_{dataset}_top{topk}.jsonl"
+                    output_dir, f"predictions_{dataset}_top{topk}.jsonl"
                 )
                 if not reuse_predictions and os.path.exists(predictions_file):
                     os.remove(predictions_file)
@@ -88,25 +91,29 @@ def evaluate(
                     for i, prediction in completed_predictions.items():
                         rerank_results[i] = {
                             "query": data[i]["query"],
-                            "hits": [data[i]["hits"][j] for j in prediction["rerank_indices"]],
+                            "hits": [
+                                data[i]["hits"][j] for j in prediction["rerank_indices"]
+                            ],
                         }
                         records[i] = prediction["record"]
                     resumed_count = len(completed_predictions)
             else:
                 completed_predictions = {}
 
-            pending_indices = [i for i in range(len(data)) if i not in completed_predictions]
+            pending_indices = [
+                i for i in range(len(data)) if i not in completed_predictions
+            ]
 
             for i in tqdm(pending_indices):
                 result = rerank(
                     query=data[i]["query"],
                     candidates=[x["content"] for x in data[i]["hits"]],
-                    return_record=True
+                    return_record=True,
                 )
                 record = asdict(result.record) if result.record else None
                 rerank_result = {
                     "query": data[i]["query"],
-                    "hits": [data[i]["hits"][j] for j in result.indices]
+                    "hits": [data[i]["hits"][j] for j in result.indices],
                 }
                 rerank_results[i] = rerank_result
                 records[i] = record
@@ -128,23 +135,20 @@ def evaluate(
 
             if output_dir is not None:
                 os.makedirs(output_dir, exist_ok=True)
-                output_file = os.path.join(
-                    output_dir,
-                    f"eval_{dataset}_top{topk}.txt"
-                )
+                output_file = os.path.join(output_dir, f"eval_{dataset}_top{topk}.txt")
                 with open(output_file, "w") as f:
                     write_results(rerank_results, f)
                 records_file = os.path.join(
-                    output_dir,
-                    f"records_{dataset}_top{topk}.json"
+                    output_dir, f"records_{dataset}_top{topk}.json"
                 )
                 metrics_file = os.path.join(
-                    output_dir,
-                    f"metrics_{dataset}_top{topk}.json"
+                    output_dir, f"metrics_{dataset}_top{topk}.json"
                 )
                 metrics = trec_eval(dataset, output_file, excluded_ids)
                 with open(records_file, "w") as f:
-                    json.dump(records, f, indent=4, ensure_ascii=False)
+                    json.dump(
+                        records, f, indent=4, ensure_ascii=False, cls=_JsonEncoder
+                    )
                 with open(metrics_file, "w") as f:
                     json.dump(metrics, f, indent=4, ensure_ascii=False)
             else:
@@ -224,7 +228,9 @@ def evaluate_one_dataset(
     reranker,
 ):
     run = collections.defaultdict(dict)
-    for query, query_id, one_docs, one_doc_ids in tqdm(zip(queries, query_ids, documents, doc_ids)):
+    for query, query_id, one_docs, one_doc_ids in tqdm(
+        zip(queries, query_ids, documents, doc_ids)
+    ):
         result = reranker.rerank(query=query, candidates=one_docs)
         for rank, indice in enumerate(result.indices):
             run[query_id][one_doc_ids[indice]] = round(1 / (rank + 1), 3)
@@ -236,7 +242,9 @@ def write_results(rerank_results, file_obj):
     for i, item in enumerate(rerank_results):
         hits = item["hits"]
         for j, hit in enumerate(hits):
-            file_obj.write(f"{hit['qid']} Q{i} {hit['docid']} {j + 1} {round(1 / (j + 1), 3)} rank")
+            file_obj.write(
+                f"{hit['qid']} Q{i} {hit['docid']} {j + 1} {round(1 / (j + 1), 3)} rank"
+            )
             file_obj.write("\n")
 
 
@@ -274,9 +282,22 @@ def build_prediction_entry(
     }
 
 
+class _JsonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        import numpy as np
+
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        return super().default(obj)
+
+
 def append_prediction(predictions_file: str, entry: dict):
     with open(predictions_file, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False))
+        f.write(json.dumps(entry, ensure_ascii=False, cls=_JsonEncoder))
         f.write("\n")
 
 
@@ -299,7 +320,9 @@ def load_existing_predictions(
                 continue
             if prediction.get("config_signature") != config_signature:
                 continue
-            if prediction.get("prediction_signature") != build_prediction_signature(data[sample_idx]):
+            if prediction.get("prediction_signature") != build_prediction_signature(
+                data[sample_idx]
+            ):
                 continue
             completed_predictions[sample_idx] = prediction
     return completed_predictions
@@ -313,7 +336,8 @@ def build_summary(
     predictions_file: str | None,
 ) -> dict:
     latencies = [
-        record["latency"] for record in records
+        record["latency"]
+        for record in records
         if record is not None and record.get("latency") is not None
     ]
     return {
@@ -344,7 +368,9 @@ def parse_dict_args(args_string: str):
     return args
 
 
-def add_reranker_cli_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def add_reranker_cli_arguments(
+    parser: argparse.ArgumentParser,
+) -> argparse.ArgumentParser:
     parser.add_argument("--config_json", type=str, default=None)
     parser.add_argument("--model_type", type=str, default="openai")
     parser.add_argument("--model_args", type=parse_dict_args, default=None)
@@ -412,7 +438,9 @@ def build_run_config_from_cli_args(args, datasets: list[str]) -> dict:
 
 def main(args):
     if args.output_dir is None:
-        output_dir = os.path.join("results", "runs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+        output_dir = os.path.join(
+            "results", "runs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        )
     else:
         output_dir = args.output_dir
     if os.path.exists(os.path.join(output_dir, "results.json")) and not args.overwrite:
@@ -443,13 +471,14 @@ def main(args):
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     add_reranker_cli_arguments(parser)
     parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--retriever", type=str, default="bm25")
     parser.add_argument("--topk", type=int, default=100)
-    parser.add_argument("--order", type=str, default="initial", choices=["initial", "random", "reverse"])
+    parser.add_argument(
+        "--order", type=str, default="initial", choices=["initial", "random", "reverse"]
+    )
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--overwrite", default=False, action="store_true")
     args = parser.parse_args()
