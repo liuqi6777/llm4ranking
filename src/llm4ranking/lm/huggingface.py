@@ -24,7 +24,13 @@ class HFLM(LM):
     def __init__(
         self,
         model: Union[str, transformers.PreTrainedModel],
-        tokenizer: Optional[Union[str, transformers.PreTrainedTokenizer, transformers.PreTrainedTokenizerFast]] = None,
+        tokenizer: Optional[
+            Union[
+                str,
+                transformers.PreTrainedTokenizer,
+                transformers.PreTrainedTokenizerFast,
+            ]
+        ] = None,
         revision: Optional[str] = "main",
         truncation: Optional[bool] = True,
         max_length: Optional[int] = None,
@@ -72,7 +78,7 @@ class HFLM(LM):
                 quantization_config = transformers.BitsAndBytesConfig(
                     load_in_8bit=load_in_8bit,
                     load_in_4bit=load_in_4bit,
-                    **(quantization_config or {})
+                    **(quantization_config or {}),
                 )
 
             self.model = transformers.AutoModelForCausalLM.from_pretrained(
@@ -88,7 +94,9 @@ class HFLM(LM):
         elif isinstance(model, transformers.PreTrainedModel):
             self.model = model
         else:
-            raise ValueError(f"Model must be a string or a PreTrainedModel, not {type(model)}")
+            raise ValueError(
+                f"Model must be a string or a PreTrainedModel, not {type(model)}"
+            )
 
         # Load tokenizer
         if tokenizer:
@@ -99,12 +107,22 @@ class HFLM(LM):
                     trust_remote_code=trust_remote_code,
                     **kwargs,
                 )
-            elif isinstance(tokenizer, (transformers.PreTrainedTokenizer, transformers.PreTrainedTokenizerFast)):
+            elif isinstance(
+                tokenizer,
+                (
+                    transformers.PreTrainedTokenizer,
+                    transformers.PreTrainedTokenizerFast,
+                ),
+            ):
                 self.tokenizer = tokenizer
             else:
-                raise ValueError(f"Tokenizer must be a string or a PreTrainedTokenizer, not {type(tokenizer)}")
+                raise ValueError(
+                    f"Tokenizer must be a string or a PreTrainedTokenizer, not {type(tokenizer)}"
+                )
         else:
-            assert isinstance(model, str), "Tokenizer must be provided if model is not a string"
+            assert isinstance(model, str), (
+                "Tokenizer must be provided if model is not a string"
+            )
             self.tokenizer = transformers.AutoTokenizer.from_pretrained(
                 model,
                 revision=revision,
@@ -120,9 +138,7 @@ class HFLM(LM):
             if self.model.config.vocab_size != len(self.tokenizer):
                 # Resize model for LoRAs with added tokens.
                 self.model.resize_token_embeddings(len(self.tokenizer))
-            self.model = PeftModel.from_pretrained(
-                self.model, peft, revision=revision
-            )
+            self.model = PeftModel.from_pretrained(self.model, peft, revision=revision)
         elif delta:
             model_delta = transformers.AutoModelForCausalLM.from_pretrained(
                 delta,
@@ -146,7 +162,9 @@ class HFLM(LM):
 
         if self.tokenizer.pad_token_id is None:
             if self.tokenizer.eos_token_id is None:
-                raise ValueError("Tokenizer must define either pad_token_id or eos_token_id for batching.")
+                raise ValueError(
+                    "Tokenizer must define either pad_token_id or eos_token_id for batching."
+                )
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
     @property
@@ -171,11 +189,7 @@ class HFLM(LM):
     def device(self):
         return self.model.device
 
-    def generate(
-        self,
-        messages: list[dict[str, str]],
-        **kwargs
-    ) -> LMOutput:
+    def generate(self, messages: list[dict[str, str]], **kwargs) -> LMOutput:
         batch_outputs = self.generate_batch([messages], **kwargs)
         return LMOutput(text=batch_outputs.text[0])
 
@@ -188,7 +202,9 @@ class HFLM(LM):
             return BatchLMOutput(text=[])
 
         max_new_tokens = kwargs.pop("max_new_tokens", self.max_new_tokens)
-        input_ids, attention_mask = self._prepare_generation_inputs(batch_messages, max_new_tokens=max_new_tokens)
+        input_ids, attention_mask = self._prepare_generation_inputs(
+            batch_messages, max_new_tokens=max_new_tokens
+        )
         with torch.no_grad():
             outputs = self.model.generate(
                 input_ids=input_ids,
@@ -197,17 +213,12 @@ class HFLM(LM):
                 use_cache=True,
                 pad_token_id=self.tokenizer.pad_token_id,
                 **self._prepare_generation_kwargs(kwargs),
-            )[:, input_ids.shape[-1]:].cpu()
+            )[:, input_ids.shape[-1] :].cpu()
 
         output_texts = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
         return BatchLMOutput(text=output_texts)
 
-
-    def loglikelihood(
-        self,
-        messages: list[dict[str, str]],
-        **kwargs
-    ) -> LMOutput:
+    def loglikelihood(self, messages: list[dict[str, str]], **kwargs) -> LMOutput:
         """Get the loglikelihood of the model.
 
         Args:
@@ -232,13 +243,22 @@ class HFLM(LM):
         if not batch_messages:
             return BatchLMOutput(text=[], loglikelihood=[])
 
-        input_ids_list = [self._prepare_loglikelihood_input_ids(messages).squeeze(0) for messages in batch_messages]
+        input_ids_list = [
+            self._prepare_loglikelihood_input_ids(messages).squeeze(0)
+            for messages in batch_messages
+        ]
         labels_list = [
-            self._mask_labels(messages, input_ids.unsqueeze(0).clone())[:, 1:].squeeze(0)
+            self._mask_labels(messages, input_ids.unsqueeze(0).clone())[:, 1:].squeeze(
+                0
+            )
             for messages, input_ids in zip(batch_messages, input_ids_list)
         ]
-        input_ids = pad_sequence(input_ids_list, batch_first=True, padding_value=self.tokenizer.pad_token_id).to(self.device)
-        labels = pad_sequence(labels_list, batch_first=True, padding_value=-100).to(self.device)
+        input_ids = pad_sequence(
+            input_ids_list, batch_first=True, padding_value=self.tokenizer.pad_token_id
+        ).to(self.device)
+        labels = pad_sequence(labels_list, batch_first=True, padding_value=-100).to(
+            self.device
+        )
         attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long()
         loglikelihoods = self._compute_loglikelihoods(
             input_ids=input_ids,
@@ -252,10 +272,7 @@ class HFLM(LM):
         )
 
     def logits(
-        self,
-        messages: list[dict[str, str]],
-        token: Optional[str] = None,
-        **kwargs
+        self, messages: list[dict[str, str]], token: Optional[str] = None, **kwargs
     ) -> LMOutput:
         """Get the logits of the model.
 
@@ -279,8 +296,13 @@ class HFLM(LM):
         if not batch_messages:
             return BatchLMOutput(logits=[])
 
-        input_ids_list = [self._prepare_logits_input_ids(messages).squeeze(0) for messages in batch_messages]
-        input_ids = pad_sequence(input_ids_list, batch_first=True, padding_value=self.tokenizer.pad_token_id).to(self.device)
+        input_ids_list = [
+            self._prepare_logits_input_ids(messages).squeeze(0)
+            for messages in batch_messages
+        ]
+        input_ids = pad_sequence(
+            input_ids_list, batch_first=True, padding_value=self.tokenizer.pad_token_id
+        ).to(self.device)
         attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long()
         with torch.no_grad():
             outputs = self.model(input_ids, attention_mask=attention_mask, **kwargs)
@@ -294,15 +316,18 @@ class HFLM(LM):
         return BatchLMOutput(logits=batch_logits)
 
     def _mask_labels(
-        self, 
+        self,
         messages: list[dict[str, str]],
         labels: torch.Tensor,
     ) -> torch.Tensor:
         for message_idx, message in enumerate(messages):
             if message["role"] != "assistant":
-                message_start_idx = self._get_messages_length(messages[:message_idx]) \
-                    if message_idx > 0 else 0
-                message_end_idx = self._get_messages_length(messages[:message_idx+1])         
+                message_start_idx = (
+                    self._get_messages_length(messages[:message_idx])
+                    if message_idx > 0
+                    else 0
+                )
+                message_end_idx = self._get_messages_length(messages[: message_idx + 1])
                 labels[:, message_start_idx:message_end_idx] = -100
                 if message_end_idx >= self.tokenizer.model_max_length:
                     break
@@ -310,8 +335,10 @@ class HFLM(LM):
 
     def _get_messages_length(self, messages: list[dict[str, str]]) -> int:
         return self.tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True,
-            return_tensors="pt", truncation=self._truncation,
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            truncation=self._truncation,
         ).shape[1]
 
     def _prepare_generation_kwargs(self, kwargs: dict) -> dict:
@@ -344,7 +371,9 @@ class HFLM(LM):
         for input_ids in input_ids_list:
             pad_len = max_len - input_ids.size(0)
             if pad_len > 0:
-                padding = torch.full((pad_len,), self.tokenizer.pad_token_id, dtype=input_ids.dtype)
+                padding = torch.full(
+                    (pad_len,), self.tokenizer.pad_token_id, dtype=input_ids.dtype
+                )
                 input_ids = torch.cat([padding, input_ids], dim=0)
                 attention_mask = torch.cat(
                     [
@@ -362,7 +391,9 @@ class HFLM(LM):
             torch.stack(padded_attention_mask, dim=0).to(self.device),
         )
 
-    def _prepare_loglikelihood_input_ids(self, messages: list[dict[str, str]]) -> torch.Tensor:
+    def _prepare_loglikelihood_input_ids(
+        self, messages: list[dict[str, str]]
+    ) -> torch.Tensor:
         return self.tokenizer.apply_chat_template(
             messages,
             return_tensors="pt",
@@ -373,7 +404,7 @@ class HFLM(LM):
         )
 
     def _prepare_logits_input_ids(self, messages: list[dict[str, str]]) -> torch.Tensor:
-        return self.tokenizer.apply_chat_template(
+        result = self.tokenizer.apply_chat_template(
             messages,
             return_tensors="pt",
             truncation=self._truncation,
@@ -381,6 +412,9 @@ class HFLM(LM):
             add_generation_prompt=True,
             enable_thinking=False,
         )
+        if hasattr(result, "input_ids"):
+            return result.input_ids
+        return result
 
     def _compute_loglikelihoods(
         self,
@@ -393,7 +427,12 @@ class HFLM(LM):
         labels = labels.to(self.device)
         attention_mask = attention_mask.to(self.device)
         with torch.no_grad():
-            logits = self.model(input_ids, attention_mask=attention_mask, **kwargs).logits[:, :-1, :].contiguous().float()
+            logits = (
+                self.model(input_ids, attention_mask=attention_mask, **kwargs)
+                .logits[:, :-1, :]
+                .contiguous()
+                .float()
+            )
             losses = torch.nn.functional.cross_entropy(
                 logits.transpose(1, 2),
                 labels,
@@ -418,4 +457,6 @@ class HFLM(LM):
         if isinstance(token, list):
             token_ids = self.tokenizer.convert_tokens_to_ids(token)
             return [float(logits[token_id].item()) for token_id in token_ids]
-        raise ValueError(f"Token must be a string or a list of strings, not {type(token)}")
+        raise ValueError(
+            f"Token must be a string or a list of strings, not {type(token)}"
+        )

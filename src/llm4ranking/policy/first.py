@@ -27,7 +27,7 @@ class First(ListwisePolicy):
         query: str,
         candidates: list[str],
         return_lm_outputs: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Union[list[int], PolicyResult[list[int]]]:
         """Rank the candidaes using logit scores.
 
@@ -41,15 +41,25 @@ class First(ListwisePolicy):
             Either the ranked indices or a tuple of (ranked indices, LM outputs)
         """
         if len(candidates) > len(self.DOCIDS):
-            raise ValueError(f"Number of candidates ({len(candidates)}) exceeds the maximum number of supported candidates ({len(self.DOCIDS)})")
+            raise ValueError(
+                f"Number of candidates ({len(candidates)}) exceeds the maximum number of supported candidates ({len(self.DOCIDS)})"
+            )
 
         messages = self.create_messages(query, candidates)
         lm_outputs = self.lm.logits(messages, **kwargs)
         logits = lm_outputs.logits
-        token_ids = [self.lm.tokenizer.encode(i)[0] for i in self.DOCIDS[0:len(candidates)]]
-        logit_for_each_candidate = [logits[i] for i in token_ids]
-        ranking = sorted(range(len(logit_for_each_candidate)), key=lambda i: logit_for_each_candidate[i], reverse=True)
+        token_ids = [
+            self.lm.tokenizer.encode(i, add_special_tokens=False)[0]
+            for i in self.DOCIDS[0 : len(candidates)]
+        ]
+        logit_for_each_candidate = [float(logits[i]) for i in token_ids]
+        ranking = sorted(
+            range(len(logit_for_each_candidate)),
+            key=lambda i: logit_for_each_candidate[i],
+            reverse=True,
+        )
         if return_lm_outputs:
+            lm_outputs.logits = logit_for_each_candidate
             return self.make_result(ranking, lm_outputs)
         return ranking
 
@@ -68,7 +78,12 @@ class First(ListwisePolicy):
             list[dict[str, str]]: List of messages, one per candidate
         """
         messages = [
-            {"role": "user", "content": self.prompt_template.render(query=query, candidates=candidates)}
+            {
+                "role": "user",
+                "content": self.prompt_template.render(
+                    query=query, candidates=candidates
+                ),
+            }
         ]
         return messages
 
@@ -77,4 +92,7 @@ class First(ListwisePolicy):
         queries: list[str],
         batch_candidates: list[list[str]],
     ) -> list[list[dict[str, str]]]:
-        return [self.create_messages(query, candidates) for query, candidates in zip(queries, batch_candidates)]
+        return [
+            self.create_messages(query, candidates)
+            for query, candidates in zip(queries, batch_candidates)
+        ]
