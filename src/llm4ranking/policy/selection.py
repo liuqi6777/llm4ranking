@@ -1,8 +1,8 @@
 import re
 from typing import Union
 
-from llm4ranking.lm.base import Capability, LMOutput
-from llm4ranking.policy.base import SelectionPolicy, PolicyResult
+from llm4ranking.lm.base import Capability
+from llm4ranking.policy.base import PolicyResult, SelectionPolicy
 
 
 DEFAULT_PROMPT_TEMPLATE = """I will provide you with the given query and {{ candidates|length }} documents, each indicated by a numerical identifier [].
@@ -55,6 +55,11 @@ class TourRankSelection(SelectionPolicy):
         """
         messages = self.create_messages(query, candidates, num_selection)
         lm_outputs = self.lm.generate(messages, **kwargs)
+        parsed = [int(idx) - 1 for idx in re.findall(r"\[(\d+)\]", lm_outputs.text)]
+        valid_unique = list(dict.fromkeys(index for index in parsed if 0 <= index < len(candidates)))
+        lm_outputs.parse_failures = int(
+            len(parsed) != num_selection or len(valid_unique) < num_selection
+        )
         seleted_idx = self.parse_output(lm_outputs.text, num_selection, len(candidates))
         if return_lm_outputs:
             return self.make_result(seleted_idx, lm_outputs)
@@ -104,7 +109,7 @@ class TourRankSelection(SelectionPolicy):
             list[int]: Indices of selected documents
         """
         idxs = [int(idx) - 1 for idx in re.findall(r"\[(\d+)\]", output)]
-        idxs = [x for x in idxs if 0 <= x < N]
+        idxs = list(dict.fromkeys(x for x in idxs if 0 <= x < N))
         if len(idxs) > n:
             idxs = idxs[:n]
         if len(idxs) < n:

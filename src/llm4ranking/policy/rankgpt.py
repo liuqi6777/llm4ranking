@@ -1,7 +1,7 @@
 import re
 from typing import Union
 
-from llm4ranking.lm.base import Capability, LMOutput
+from llm4ranking.lm.base import Capability
 from llm4ranking.policy.base import ListwisePolicy, PolicyResult
 
 
@@ -48,6 +48,11 @@ class RankGPT(ListwisePolicy):
         messages = self.create_messages(query, candidates)
         lm_outputs = self.lm.generate(messages, **kwargs)
         permutation = self.parse_output(lm_outputs.text, len(candidates))
+        parsed = [int(x) - 1 for x in re.findall(r'\d+', lm_outputs.text)]
+        lm_outputs.parse_failures = int(
+            len(parsed) != len(candidates)
+            or set(parsed) != set(range(len(candidates)))
+        )
         if return_lm_outputs:
             return self.make_result(permutation, lm_outputs)
         return permutation

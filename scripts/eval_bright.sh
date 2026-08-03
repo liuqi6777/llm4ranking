@@ -9,8 +9,8 @@ python -m llm4ranking.evaluation.evaluate_bright \
   --model_type hf \
   --model_args model=$model \
   --reranking_approach rankgpt \
-  --reranking_args window_size=20,step=10,truncate_length=300 \
+  --strategy_args window_size=20,step=10,truncate_length=300 \
   --tasks pony \
-  --model_fw_args do_sample=False,max_new_tokens=128 \
+  --backend_args do_sample=False,max_new_tokens=128 \
+  --seed 42 \
   --topk 20
-

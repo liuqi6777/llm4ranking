@@ -109,6 +109,12 @@ class PRP(PairwisePolicy):
             self.create_batch_messages(query, doc_pairs, reverse=True),
             **kwargs,
         )
+        forward_outputs.parse_failures = sum(
+            self.parse_output(text) == "" for text in (forward_outputs.text or [])
+        )
+        reverse_outputs.parse_failures = sum(
+            self.parse_output(text) == "" for text in (reverse_outputs.text or [])
+        )
         scores = self.parse_batch_outputs(forward_outputs, reverse_outputs)
         if return_lm_outputs:
             return self.make_result(scores, {"forward": forward_outputs, "reverse": reverse_outputs})

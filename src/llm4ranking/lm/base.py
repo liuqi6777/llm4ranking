@@ -11,6 +11,11 @@ class LMOutput:
     text: Optional[str] = None
     loglikelihood: Optional[float] = None
     logits: Optional[np.ndarray] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    request_count: int = 1
+    fallback_count: int = 0
+    parse_failures: int = 0
 
 
 @dataclass
@@ -18,6 +23,11 @@ class BatchLMOutput:
     text: Optional[list[str]] = None
     loglikelihood: Optional[list[float]] = None
     logits: Optional[list[Union[np.ndarray, float, list[float]]]] = None
+    input_tokens: Optional[list[Optional[int]]] = None
+    output_tokens: Optional[list[Optional[int]]] = None
+    request_count: int = 1
+    fallback_count: int = 0
+    parse_failures: int = 0
 
 
 class Capability(Enum):
@@ -83,6 +93,11 @@ class LM(ABC):
         outputs = [self.generate(messages, **kwargs) for messages in batch_messages]
         return BatchLMOutput(
             text=[output.text for output in outputs],
+            input_tokens=[output.input_tokens for output in outputs],
+            output_tokens=[output.output_tokens for output in outputs],
+            request_count=sum(output.request_count for output in outputs),
+            fallback_count=len(outputs),
+            parse_failures=sum(output.parse_failures for output in outputs),
         )
 
     def loglikelihood_batch(
@@ -95,6 +110,11 @@ class LM(ABC):
         return BatchLMOutput(
             text=[output.text for output in outputs],
             loglikelihood=[output.loglikelihood for output in outputs],
+            input_tokens=[output.input_tokens for output in outputs],
+            output_tokens=[output.output_tokens for output in outputs],
+            request_count=sum(output.request_count for output in outputs),
+            fallback_count=len(outputs),
+            parse_failures=sum(output.parse_failures for output in outputs),
         )
 
     def logits_batch(
@@ -107,4 +127,9 @@ class LM(ABC):
         outputs = [self.logits(messages, token=token, **kwargs) for messages in batch_messages]
         return BatchLMOutput(
             logits=[output.logits for output in outputs],
+            input_tokens=[output.input_tokens for output in outputs],
+            output_tokens=[output.output_tokens for output in outputs],
+            request_count=sum(output.request_count for output in outputs),
+            fallback_count=len(outputs),
+            parse_failures=sum(output.parse_failures for output in outputs),
         )

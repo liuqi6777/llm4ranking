@@ -2,8 +2,6 @@ import argparse
 import collections
 import pytrec_eval
 
-from datasets import load_dataset
-
 
 INDEX = {
     'bm25': {
@@ -108,6 +106,8 @@ TOPICS_AND_QRELS = {
 
 
 def get_qrels(dataset: str) -> str:
+    from datasets import load_dataset
+
     qrel = collections.defaultdict(dict)
     f_qrel = load_dataset(
         "liuqi6777/retrieval_results",

@@ -13,6 +13,7 @@ python -m llm4ranking.evaluation.evaluator \
   --strategy_args window_size=20,step=10,truncate_length=300 \
   --datasets dl19 \
   --backend_args do_sample=False,max_new_tokens=128 \
+  --seed 42 \
   --topk 20
 
 
@@ -21,5 +22,5 @@ python -m llm4ranking.evaluation.evaluator \
   --model_args model=$model \
   --reranking_approach rel-gen \
   --datasets dl19 \
+  --seed 42 \
   --topk 20
-

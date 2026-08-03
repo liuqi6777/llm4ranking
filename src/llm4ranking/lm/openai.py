@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Union, List, Dict
+from typing import Dict, List, Optional
 
 from openai import OpenAI
 from llm4ranking.lm.base import BatchLMOutput, Capability, LM, LMOutput
@@ -48,7 +48,11 @@ class OpenAIClient(LM):
         **kwargs
     ) -> LMOutput:
         batch_output = self.generate_batch([messages], **kwargs)
-        return LMOutput(text=batch_output.text[0])
+        return LMOutput(
+            text=batch_output.text[0],
+            input_tokens=batch_output.input_tokens[0],
+            output_tokens=batch_output.output_tokens[0],
+        )
 
     def generate_batch(
         self,
@@ -56,6 +60,8 @@ class OpenAIClient(LM):
         **kwargs,
     ) -> BatchLMOutput:
         texts = []
+        input_tokens = []
+        output_tokens = []
         for messages in batch_messages:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -64,7 +70,17 @@ class OpenAIClient(LM):
                 **{key: value for key, value in kwargs.items() if key != "max_completion_tokens"}
             )
             texts.append(response.choices[0].message.content.strip())
-        return BatchLMOutput(text=texts)
+            usage = getattr(response, "usage", None)
+            prompt_tokens = getattr(usage, "prompt_tokens", None)
+            completion_tokens = getattr(usage, "completion_tokens", None)
+            input_tokens.append(prompt_tokens if isinstance(prompt_tokens, int) else None)
+            output_tokens.append(completion_tokens if isinstance(completion_tokens, int) else None)
+        return BatchLMOutput(
+            text=texts,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            request_count=len(batch_messages),
+        )
 
     def loglikelihood(self, **kwargs):
         raise NotImplementedError("OpenAI API does not support loglikelihood calculation")

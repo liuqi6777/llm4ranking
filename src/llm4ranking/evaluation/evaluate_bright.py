@@ -7,9 +7,10 @@ from llm4ranking.evaluation.evaluator import (
     add_reranker_cli_arguments,
     build_reranker_from_cli_args,
     evaluate_one_dataset,
+    write_run_metadata,
 )
+from llm4ranking.evaluation.trec_eval import compute_metrics
 from llm4ranking.evaluation.utils import load_bright, retrieval_bm25
-from llm4ranking.evaluation.trec_eval import trec_eval, compute_metrics
 
 
 if __name__ == "__main__":
@@ -34,13 +35,14 @@ if __name__ == "__main__":
 
     with open(os.path.join(output_dir, "cli_args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
+    write_run_metadata(output_dir, run_config=vars(args), seed=args.seed)
 
     reranker = build_reranker_from_cli_args(args)
 
+    all_results = {}
     for task in args.tasks:
         print(f"Evaluating task: {task}")
-        all_results = {}
-        dataset = load_bright(task)
+        dataset = load_bright(task, revision=args.dataset_revision)
         if args.retriever == "bm25":
             retrieval_results = retrieval_bm25(
                 queries=dataset["queries"],
@@ -71,11 +73,14 @@ if __name__ == "__main__":
             documents=rerank_documents,
             doc_ids=rerank_doc_ids,
             qrels=dataset["qrels"],
+            seed=args.seed,
+            dataset_name=f"bright-{task}",
         )
         print("Reranking Metrics:")
         for metric, value in results.items():
             print(f"{metric:<12}\t{value}")
+        all_results[task] = results
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:
-        json.dump(results, f, indent=4, default=str)
+        json.dump(all_results, f, indent=4, default=str)
     print(f"Results saved to {output_dir}")

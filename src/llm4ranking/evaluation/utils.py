@@ -38,9 +38,13 @@ def retrieval_bm25(
     return results
 
 
-def load_mair(task, instruct=True):
-    all_queries = load_dataset("MAIR-Bench/MAIR-Queries", task)
-    all_docs = load_dataset("MAIR-Bench/MAIR-Docs", task)
+def load_mair(task, instruct=True, queries_revision=None, documents_revision=None):
+    all_queries = load_dataset(
+        "MAIR-Bench/MAIR-Queries", task, revision=queries_revision
+    )
+    all_docs = load_dataset(
+        "MAIR-Bench/MAIR-Docs", task, revision=documents_revision
+    )
 
     all_results = {}
     for split in all_queries:
@@ -69,15 +73,19 @@ def load_mair(task, instruct=True):
     return all_results
 
 
-def load_bright(task, long_context=False, reasoning=None):
+def load_bright(task, long_context=False, reasoning=None, revision=None):
     if reasoning:
-        all_queries = load_dataset("xlangai/bright", f"{reasoning}_reason")[task]
+        all_queries = load_dataset(
+            "xlangai/bright", f"{reasoning}_reason", revision=revision
+        )[task]
     else:
-        all_queries = load_dataset("xlangai/bright", "examples")[task]
+        all_queries = load_dataset("xlangai/bright", "examples", revision=revision)[task]
     if long_context:
-        all_docs = load_dataset("xlangai/bright", "long_documents")[task]
+        all_docs = load_dataset(
+            "xlangai/bright", "long_documents", revision=revision
+        )[task]
     else:
-        all_docs = load_dataset("xlangai/bright", "documents")[task]
+        all_docs = load_dataset("xlangai/bright", "documents", revision=revision)[task]
     documents = {doc["id"]: doc["content"] for doc in all_docs}
 
     queries = {}

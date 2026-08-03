@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 with open("README.md", mode="r", encoding="utf-8") as readme_file:
     readme = readme_file.read()
@@ -12,7 +12,9 @@ setup(
     license='MIT',
     author='Qi Liu',
     author_email='qiliu6777@gmail.com',
-    description='',
+    description='A research framework for reranking documents with large language models.',
+    long_description=readme,
+    long_description_content_type='text/markdown',
     python_requires='>=3.10',
     install_requires=[
         'torch>=2.1.0',

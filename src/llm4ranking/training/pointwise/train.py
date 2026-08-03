@@ -53,7 +53,11 @@ def main():
     model = get_model(model_args, lora_args)
     model.train()
 
-    data_module = make_data_module(tokenizer, data_args)
+    data_module = make_data_module(
+        tokenizer,
+        data_args,
+        max_length=training_args.model_max_length,
+    )
     num_docs_per_query = data_args.num_negatives + 1
 
     class PointwiseTrainer(Trainer):

@@ -3,17 +3,20 @@ import ast
 import collections
 import datetime
 import hashlib
+import importlib.metadata
 import json
 import os
+import platform
 import random
+import subprocess
+import sys
 import tempfile
 from dataclasses import asdict
+from pathlib import Path
 from statistics import mean
 from tqdm import tqdm
-from datasets import load_dataset
 
 from llm4ranking import ModelConfig, Reranker, RerankerConfig
-from llm4ranking.evaluation.trec_eval import trec_eval, compute_metrics
 
 
 def evaluate(
@@ -26,13 +29,24 @@ def evaluate(
     output_dir: str = None,
     run_config: dict | None = None,
     reuse_predictions: bool = True,
+    seed: int = 42,
+    retrieval_revision: str | None = None,
+    dataset_revision: str | None = None,
 ):
+    from datasets import load_dataset
+    from llm4ranking.evaluation.trec_eval import trec_eval
 
+    effective_run_config = dict(run_config or {})
+    effective_run_config["seed"] = seed
+    effective_run_config.setdefault("retrieval_revision", retrieval_revision)
+    effective_run_config.setdefault("dataset_revision", dataset_revision)
     results = {}
     results["output_dir"] = output_dir
+    results["seed"] = seed
 
     if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
+        write_run_metadata(output_dir, run_config=effective_run_config, seed=seed)
 
     for dataset in datasets:
         try:
@@ -42,6 +56,7 @@ def evaluate(
                 "liuqi6777/retrieval_results",
                 data_files=f"{retriever}/{dataset}_top100.jsonl",
                 split="train",
+                revision=retrieval_revision,
             ).to_list()
 
             results[dataset] = {}
@@ -54,15 +69,20 @@ def evaluate(
                 for i in range(len(data)):
                     data[i]["hits"] = data[i]["hits"][:topk]
 
+            order_rng = random.Random(derive_seed(seed, dataset, "candidate-order"))
             for i in range(len(data)):
                 if order == "reverse":
                     data[i]["hits"].reverse()
                 elif order == "random":
-                    random.shuffle(data[i]["hits"])
+                    order_rng.shuffle(data[i]["hits"])
 
             if dataset.startswith("bright"):
                 task_name = dataset.removeprefix("bright-").replace("-", "_")
-                examples = load_dataset("xlangai/bright", "examples")[task_name]
+                examples = load_dataset(
+                    "xlangai/bright",
+                    "examples",
+                    revision=dataset_revision,
+                )[task_name]
                 excluded_ids = {}
                 for e in examples:
                     excluded_ids[e["id"]] = e["excluded_ids"]
@@ -73,7 +93,7 @@ def evaluate(
             records = [None] * len(data)
             predictions_file = None
             resumed_count = 0
-            config_signature = build_config_signature(run_config)
+            config_signature = build_config_signature(effective_run_config)
 
             if output_dir is not None:
                 predictions_file = os.path.join(
@@ -105,12 +125,16 @@ def evaluate(
             ]
 
             for i in tqdm(pending_indices):
+                query_seed = derive_seed(seed, dataset, i)
+                seed_everything(query_seed)
                 result = rerank(
                     query=data[i]["query"],
                     candidates=[x["content"] for x in data[i]["hits"]],
                     return_record=True,
                 )
                 record = asdict(result.record) if result.record else None
+                if record is not None:
+                    record["seed"] = query_seed
                 rerank_result = {
                     "query": data[i]["query"],
                     "hits": [data[i]["hits"][j] for j in result.indices],
@@ -147,7 +171,11 @@ def evaluate(
                 metrics = trec_eval(dataset, output_file, excluded_ids)
                 with open(records_file, "w") as f:
                     json.dump(
-                        records, f, indent=4, ensure_ascii=False, cls=_JsonEncoder
+                        records,
+                        f,
+                        indent=4,
+                        ensure_ascii=False,
+                        default=json_default,
                     )
                 with open(metrics_file, "w") as f:
                     json.dump(metrics, f, indent=4, ensure_ascii=False)
@@ -185,6 +213,9 @@ def simple_evaluate(
     prompt_template: str = None,
     output_dir: str = None,
     reuse_predictions: bool = True,
+    seed: int = 42,
+    retrieval_revision: str | None = None,
+    dataset_revision: str | None = None,
 ):
     reranker = Reranker(
         reranking_approach=reranking_approach,
@@ -204,6 +235,9 @@ def simple_evaluate(
         order=order,
         output_dir=output_dir,
         reuse_predictions=reuse_predictions,
+        seed=seed,
+        retrieval_revision=retrieval_revision,
+        dataset_revision=dataset_revision,
         run_config={
             "model_type": model_type,
             "model_args": model_args,
@@ -215,6 +249,9 @@ def simple_evaluate(
             "strategy_args": strategy_args,
             "backend_args": backend_args,
             "prompt_template": prompt_template,
+            "seed": seed,
+            "retrieval_revision": retrieval_revision,
+            "dataset_revision": dataset_revision,
         },
     )
 
@@ -226,14 +263,20 @@ def evaluate_one_dataset(
     doc_ids,
     qrels,
     reranker,
+    seed: int = 42,
+    dataset_name: str = "dataset",
 ):
+    from llm4ranking.evaluation.trec_eval import compute_metrics
+
     run = collections.defaultdict(dict)
-    for query, query_id, one_docs, one_doc_ids in tqdm(
-        zip(queries, query_ids, documents, doc_ids)
+    samples = zip(queries, query_ids, documents, doc_ids)
+    for sample_idx, (query, query_id, one_docs, one_doc_ids) in enumerate(
+        tqdm(samples)
     ):
+        seed_everything(derive_seed(seed, dataset_name, sample_idx))
         result = reranker.rerank(query=query, candidates=one_docs)
         for rank, indice in enumerate(result.indices):
-            run[query_id][one_doc_ids[indice]] = round(1 / (rank + 1), 3)
+            run[query_id][one_doc_ids[indice]] = len(result.indices) - rank
     metrics = compute_metrics(qrels, run)
     return metrics
 
@@ -242,9 +285,8 @@ def write_results(rerank_results, file_obj):
     for i, item in enumerate(rerank_results):
         hits = item["hits"]
         for j, hit in enumerate(hits):
-            file_obj.write(
-                f"{hit['qid']} Q{i} {hit['docid']} {j + 1} {round(1 / (j + 1), 3)} rank"
-            )
+            score = len(hits) - j
+            file_obj.write(f"{hit['qid']} Q{i} {hit['docid']} {j + 1} {score} rank")
             file_obj.write("\n")
 
 
@@ -282,22 +324,9 @@ def build_prediction_entry(
     }
 
 
-class _JsonEncoder(json.JSONEncoder):
-    def default(self, obj):
-        import numpy as np
-
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        return super().default(obj)
-
-
 def append_prediction(predictions_file: str, entry: dict):
     with open(predictions_file, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False, cls=_JsonEncoder))
+        f.write(json.dumps(entry, ensure_ascii=False, default=json_default))
         f.write("\n")
 
 
@@ -340,6 +369,12 @@ def build_summary(
         for record in records
         if record is not None and record.get("latency") is not None
     ]
+    valid_records = [record for record in records if record is not None]
+    peak_memory = [
+        record["peak_memory_mb"]
+        for record in valid_records
+        if record.get("peak_memory_mb") is not None
+    ]
     return {
         "total_queries": total_queries,
         "completed_queries": completed_queries,
@@ -347,8 +382,127 @@ def build_summary(
         "newly_computed_queries": completed_queries - resumed_queries,
         "avg_latency": round(mean(latencies), 4) if latencies else None,
         "total_latency": round(sum(latencies), 4) if latencies else None,
+        "total_lm_calls": sum(record.get("num_lm_calls", 0) for record in valid_records),
+        "total_input_tokens": sum(record.get("num_input_tokens", 0) for record in valid_records),
+        "total_output_tokens": sum(record.get("num_output_tokens", 0) for record in valid_records),
+        "total_parse_failures": sum(record.get("num_parse_failures", 0) for record in valid_records),
+        "total_fallbacks": sum(record.get("num_fallbacks", 0) for record in valid_records),
+        "total_truncated_docs": sum(record.get("num_truncated_docs", 0) for record in valid_records),
+        "peak_memory_mb": max(peak_memory) if peak_memory else None,
         "predictions_file": predictions_file,
     }
+
+
+def derive_seed(base_seed: int, dataset: str, sample: int | str) -> int:
+    payload = f"{base_seed}:{dataset}:{sample}".encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:4], "big")
+
+
+def seed_everything(seed: int) -> None:
+    random.seed(seed)
+    try:
+        import numpy as np
+
+        np.random.seed(seed % (2**32))
+    except ImportError:
+        pass
+
+    try:
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        pass
+
+
+def json_default(value):
+    if hasattr(value, "detach") and hasattr(value, "cpu"):
+        value = value.detach().cpu().numpy()
+    if hasattr(value, "shape") and hasattr(value, "dtype") and hasattr(value, "tolist"):
+        size = int(getattr(value, "size", 0))
+        if size <= 256:
+            return value.tolist()
+        raw = value.tobytes() if hasattr(value, "tobytes") else repr(value.tolist()).encode("utf-8")
+        return {
+            "type": type(value).__name__,
+            "shape": list(value.shape),
+            "dtype": str(value.dtype),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "values_omitted": True,
+        }
+    if hasattr(value, "item"):
+        return value.item()
+    if isinstance(value, set):
+        return sorted(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def build_reproducibility_metadata(seed: int) -> dict:
+    packages = {}
+    for package in ("llm4ranking", "torch", "transformers", "datasets", "vllm", "openai"):
+        try:
+            packages[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            packages[package] = None
+
+    metadata = {
+        "seed": seed,
+        "per_query_seed": "sha256(base_seed:dataset:sample_index)[0:4]",
+        "python": sys.version,
+        "platform": platform.platform(),
+        "packages": packages,
+        "source": get_source_metadata(),
+    }
+    try:
+        import torch
+
+        metadata["torch"] = {
+            "cuda_available": torch.cuda.is_available(),
+            "cuda_version": torch.version.cuda,
+            "device_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+            "devices": [
+                torch.cuda.get_device_name(index)
+                for index in range(torch.cuda.device_count())
+            ] if torch.cuda.is_available() else [],
+        }
+    except ImportError:
+        metadata["torch"] = None
+    return metadata
+
+
+def get_source_metadata() -> dict | None:
+    repository = Path(__file__).resolve().parents[3]
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout.strip()
+        return {"git_commit": commit, "git_dirty": bool(dirty)}
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def write_run_metadata(output_dir: str, run_config: dict | None, seed: int) -> None:
+    metadata = {
+        "run_config": run_config or {},
+        "reproducibility": build_reproducibility_metadata(seed),
+    }
+    with open(os.path.join(output_dir, "run_config.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=4, ensure_ascii=False, default=json_default)
 
 
 def parse_dict_args(args_string: str):
@@ -360,7 +514,7 @@ def parse_dict_args(args_string: str):
         return {}
     args = {}
     for arg in args_string.split(","):
-        key, value = arg.strip().split("=")
+        key, value = arg.strip().split("=", 1)
         try:
             args[key] = ast.literal_eval(value)
         except Exception:
@@ -378,6 +532,9 @@ def add_reranker_cli_arguments(
     parser.add_argument("--strategy_args", type=parse_dict_args, default=None)
     parser.add_argument("--backend_args", type=parse_dict_args, default=None)
     parser.add_argument("--prompt_template", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--retrieval_revision", type=str, default=None)
+    parser.add_argument("--dataset_revision", type=str, default=None)
     return parser
 
 
@@ -420,6 +577,9 @@ def build_run_config_from_cli_args(args, datasets: list[str]) -> dict:
             "retriever": args.retriever,
             "topk": args.topk,
             "order": args.order,
+            "seed": args.seed,
+            "retrieval_revision": args.retrieval_revision,
+            "dataset_revision": args.dataset_revision,
         }
 
     return {
@@ -433,6 +593,9 @@ def build_run_config_from_cli_args(args, datasets: list[str]) -> dict:
         "strategy_args": args.strategy_args,
         "backend_args": args.backend_args,
         "prompt_template": args.prompt_template,
+        "seed": args.seed,
+        "retrieval_revision": args.retrieval_revision,
+        "dataset_revision": args.dataset_revision,
     }
 
 
@@ -463,6 +626,9 @@ def main(args):
         output_dir=output_dir,
         reuse_predictions=not args.overwrite,
         run_config=run_config,
+        seed=args.seed,
+        retrieval_revision=args.retrieval_revision,
+        dataset_revision=args.dataset_revision,
     )
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:

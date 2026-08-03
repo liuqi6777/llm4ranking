@@ -28,6 +28,12 @@ class RankingRecord:
     lm_outputs: list[Any] = field(default_factory=list)
     num_lm_calls: int = 0
     batch_sizes: list[int] = field(default_factory=list)
+    num_input_tokens: int = 0
+    num_output_tokens: int = 0
+    num_truncated_docs: int = 0
+    num_parse_failures: int = 0
+    num_fallbacks: int = 0
+    peak_memory_mb: Optional[float] = None
 
     rank_indices: Optional[list[int]] = None
 
@@ -88,6 +94,64 @@ class RerankStrategy(ABC):
 
         record.latency = time.time() - started_at
         record.rank_indices = rank_indices
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                record.peak_memory_mb = round(
+                    torch.cuda.max_memory_allocated() / (1024**2),
+                    2,
+                )
+        except ImportError:
+            pass
+
+    @staticmethod
+    def _sum_token_usage(lm_outputs: Any, field_name: str) -> int:
+        if lm_outputs is None:
+            return 0
+        if isinstance(lm_outputs, dict):
+            return sum(
+                RerankStrategy._sum_token_usage(value, field_name)
+                for value in lm_outputs.values()
+            )
+        value = getattr(lm_outputs, field_name, None)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, list):
+            return sum(item for item in value if isinstance(item, int))
+        return 0
+
+    @staticmethod
+    def _sum_counter(lm_outputs: Any, field_name: str) -> int:
+        if lm_outputs is None:
+            return 0
+        if isinstance(lm_outputs, dict):
+            return sum(
+                RerankStrategy._sum_counter(value, field_name)
+                for value in lm_outputs.values()
+            )
+        value = getattr(lm_outputs, field_name, 0)
+        return value if isinstance(value, int) else 0
+
+    def _record_invocation(
+        self,
+        record: RankingRecord,
+        *,
+        lm_outputs: Any,
+        batch_size: int,
+        num_calls: int = 1,
+        processed_docs: int = 0,
+    ) -> None:
+        record.num_processed_docs += processed_docs
+        record.lm_outputs.append(lm_outputs)
+        request_count = self._sum_counter(lm_outputs, "request_count") or num_calls
+        record.num_lm_calls += request_count
+        recorded_batch_size = batch_size if request_count == num_calls else 1
+        record.batch_sizes.extend([recorded_batch_size] * request_count)
+        record.num_input_tokens += self._sum_token_usage(lm_outputs, "input_tokens")
+        record.num_output_tokens += self._sum_token_usage(lm_outputs, "output_tokens")
+        record.num_parse_failures += self._sum_counter(lm_outputs, "parse_failures")
+        record.num_fallbacks += self._sum_counter(lm_outputs, "fallback_count")
 
     @abstractmethod
     def rerank(
@@ -129,6 +193,11 @@ class Pointwise(RerankStrategy):
             candidates_for_scoring = [
                 " ".join(candidate.split()[:truncate_length]) for candidate in candidates_for_scoring
             ]
+            if record is not None:
+                record.num_truncated_docs = sum(
+                    original != truncated
+                    for original, truncated in zip(candidates, candidates_for_scoring)
+                )
 
         scores = []
         effective_batch_size = len(candidates_for_scoring) if batch_size is None else max(batch_size, 1)
@@ -145,9 +214,11 @@ class Pointwise(RerankStrategy):
                         return_lm_outputs=True,
                         **kwargs,
                     )
-                    record.lm_outputs.append(batch_result.lm_outputs)
-                    record.num_lm_calls += 1
-                    record.batch_sizes.append(len(candidate_batch))
+                    self._record_invocation(
+                        record,
+                        lm_outputs=batch_result.lm_outputs,
+                        batch_size=len(candidate_batch),
+                    )
                     batch_scores = batch_result.value
                 else:
                     batch_scores = ranking_func.score_many(query, candidate_batch, **kwargs)
@@ -156,9 +227,11 @@ class Pointwise(RerankStrategy):
             for candidate in candidates_for_scoring:
                 if return_record:
                     result = ranking_func.score(query, candidate, return_lm_outputs=True, **kwargs)
-                    record.lm_outputs.append(result.lm_outputs)
-                    record.num_lm_calls += 1
-                    record.batch_sizes.append(1)
+                    self._record_invocation(
+                        record,
+                        lm_outputs=result.lm_outputs,
+                        batch_size=1,
+                    )
                     score = result.value
                 else:
                     score = ranking_func.score(query, candidate, **kwargs)
@@ -191,10 +264,13 @@ class Pairwise(RerankStrategy):
         lm_outputs: Any,
         batch_size: int,
     ) -> None:
-        record.num_processed_docs += 4 * batch_size
-        record.lm_outputs.append(lm_outputs)
-        record.num_lm_calls += 2
-        record.batch_sizes.extend([batch_size, batch_size])
+        self._record_invocation(
+            record,
+            lm_outputs=lm_outputs,
+            batch_size=batch_size,
+            num_calls=2,
+            processed_docs=4 * batch_size,
+        )
 
     def _compare_pair(
         self,
@@ -467,6 +543,11 @@ class ListwiseSlidingWindow(RerankStrategy):
         ranked_inputs = list(candidates)
         if truncate_length:
             ranked_inputs = [" ".join(candidate.split()[:truncate_length]) for candidate in ranked_inputs]
+            if record is not None:
+                record.num_truncated_docs = sum(
+                    original != truncated
+                    for original, truncated in zip(candidates, ranked_inputs)
+                )
         ranked_indices = list(range(len(candidates)))
 
         window_size = window_size or len(candidates)
@@ -482,8 +563,12 @@ class ListwiseSlidingWindow(RerankStrategy):
                     return_lm_outputs=True,
                     **kwargs,
                 )
-                record.num_processed_docs += end_pos - start_pos
-                record.lm_outputs.append(result.lm_outputs)
+                self._record_invocation(
+                    record,
+                    lm_outputs=result.lm_outputs,
+                    batch_size=end_pos - start_pos,
+                    processed_docs=end_pos - start_pos,
+                )
                 permutation = result.value
             else:
                 permutation = ranking_func.rank(query, ranked_inputs[start_pos:end_pos], **kwargs)
@@ -539,8 +624,14 @@ class Tournament(RerankStrategy):
         model_candidates = list(candidates)
         if truncate_length:
             model_candidates = [" ".join(candidate.split()[:truncate_length]) for candidate in model_candidates]
+            if record is not None:
+                record.num_truncated_docs = sum(
+                    original != truncated
+                    for original, truncated in zip(candidates, model_candidates)
+                )
 
         if len(candidates) == 0:
+            self._finalize_record(record=record, started_at=started_at, rank_indices=[])
             return RerankResult(documents=[], indices=[], record=record)
 
         doc_scores = [0] * len(candidates)
@@ -570,8 +661,12 @@ class Tournament(RerankStrategy):
                             return_lm_outputs=True,
                             **kwargs,
                         )
-                        record.num_processed_docs += len(group_candidates)
-                        record.lm_outputs.append(result.lm_outputs)
+                        self._record_invocation(
+                            record,
+                            lm_outputs=result.lm_outputs,
+                            batch_size=len(group_candidates),
+                            processed_docs=len(group_candidates),
+                        )
                         top_indices = result.value
                     else:
                         top_indices = ranking_func.select(

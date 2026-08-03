@@ -78,7 +78,11 @@ class VLLM(LM):
         **kwargs,
     ) -> LMOutput:
         batch_output = self.generate_batch([messages], **kwargs)
-        return LMOutput(text=batch_output.text[0])
+        return LMOutput(
+            text=batch_output.text[0],
+            input_tokens=batch_output.input_tokens[0],
+            output_tokens=batch_output.output_tokens[0],
+        )
 
     def generate_batch(
         self,
@@ -111,7 +115,11 @@ class VLLM(LM):
             use_tqdm=False,
             sampling_params=sampling_params,
         )
-        return BatchLMOutput(text=[output.outputs[0].text for output in outputs])
+        return BatchLMOutput(
+            text=[output.outputs[0].text for output in outputs],
+            input_tokens=[len(prompt["prompt_token_ids"]) for prompt in prompts],
+            output_tokens=[len(output.outputs[0].token_ids) for output in outputs],
+        )
 
     def loglikelihood(
         self,
@@ -122,6 +130,8 @@ class VLLM(LM):
         return LMOutput(
             text=batch_output.text[0],
             loglikelihood=batch_output.loglikelihood[0],
+            input_tokens=batch_output.input_tokens[0],
+            output_tokens=batch_output.output_tokens[0],
         )
 
     def loglikelihood_batch(
@@ -169,6 +179,8 @@ class VLLM(LM):
         return BatchLMOutput(
             text=[messages[-1]["content"] for messages in batch_messages],
             loglikelihood=scores,
+            input_tokens=[len(token_ids) for token_ids, _ in prepared],
+            output_tokens=[len(token_ids) - target_start for token_ids, target_start in prepared],
         )
 
     def logits(
@@ -178,7 +190,11 @@ class VLLM(LM):
         **kwargs,
     ) -> LMOutput:
         batch_output = self.logits_batch([messages], token=token, **kwargs)
-        return LMOutput(logits=batch_output.logits[0])
+        return LMOutput(
+            logits=batch_output.logits[0],
+            input_tokens=batch_output.input_tokens[0],
+            output_tokens=batch_output.output_tokens[0],
+        )
 
     def logits_batch(
         self,
@@ -227,7 +243,11 @@ class VLLM(LM):
             if not logprobs:
                 raise RuntimeError("vLLM did not return requested next-token log probabilities.")
             batch_scores.append(self._filter_logprobs(logprobs[0], token))
-        return BatchLMOutput(logits=batch_scores)
+        return BatchLMOutput(
+            logits=batch_scores,
+            input_tokens=[len(prompt["prompt_token_ids"]) for prompt in prompts],
+            output_tokens=[1] * len(batch_messages),
+        )
 
     def _prepare_loglikelihood_prompt(
         self,

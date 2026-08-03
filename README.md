@@ -96,8 +96,11 @@ python -m llm4ranking.evaluation.evaluator \
   --strategy_args window_size=20,step=10,truncate_length=300 \
   --datasets dl19 \
   --backend_args do_sample=False,max_new_tokens=128 \
+  --seed 42 \
   --topk 20
 ```
+
+For archival runs, pin the model commit with `revision=<commit>` in `--model_args` and the data commits with `--retrieval_revision` and `--dataset_revision`. MAIR additionally accepts `--queries_revision` and `--documents_revision` because its queries and documents live in separate repositories. Each output directory includes a `run_config.json` with the effective seed, revisions, package versions, source commit, platform, and accelerator metadata.
 
 ### Supported Datasets
 

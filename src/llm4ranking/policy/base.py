@@ -69,6 +69,11 @@ class BaseRankingPolicy(ABC):
             text=batch_output.text[0] if batch_output.text else None,
             loglikelihood=batch_output.loglikelihood[0] if batch_output.loglikelihood else None,
             logits=batch_output.logits[0] if batch_output.logits else None,
+            input_tokens=batch_output.input_tokens[0] if batch_output.input_tokens else None,
+            output_tokens=batch_output.output_tokens[0] if batch_output.output_tokens else None,
+            request_count=batch_output.request_count,
+            fallback_count=batch_output.fallback_count,
+            parse_failures=batch_output.parse_failures,
         )
 
     def _wrap_lm_outputs(self, lm_outputs: list[Any]) -> BatchLMOutput:
@@ -76,6 +81,11 @@ class BaseRankingPolicy(ABC):
             text=[getattr(output, "text", None) for output in lm_outputs],
             loglikelihood=[getattr(output, "loglikelihood", None) for output in lm_outputs],
             logits=[getattr(output, "logits", None) for output in lm_outputs],
+            input_tokens=[getattr(output, "input_tokens", None) for output in lm_outputs],
+            output_tokens=[getattr(output, "output_tokens", None) for output in lm_outputs],
+            request_count=sum(getattr(output, "request_count", 1) for output in lm_outputs),
+            fallback_count=sum(getattr(output, "fallback_count", 0) for output in lm_outputs),
+            parse_failures=sum(getattr(output, "parse_failures", 0) for output in lm_outputs),
         )
 
     def make_result(self, value: T, lm_outputs: Any) -> PolicyResult[T]:

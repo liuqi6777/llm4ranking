@@ -7,9 +7,10 @@ from llm4ranking.evaluation.evaluator import (
     add_reranker_cli_arguments,
     build_reranker_from_cli_args,
     evaluate_one_dataset,
+    write_run_metadata,
 )
+from llm4ranking.evaluation.trec_eval import compute_metrics
 from llm4ranking.evaluation.utils import load_mair, retrieval_bm25
-from llm4ranking.evaluation.trec_eval import trec_eval, compute_metrics
 
 
 TASK_CONFIG = {'Competition-Math': 'Academic', 'ProofWiki_Proof': 'Academic', 'ProofWiki_Reference': 'Academic',
@@ -67,6 +68,8 @@ if __name__ == "__main__":
     parser.add_argument("--retriever", type=str, default="bm25")
     parser.add_argument("--topk", type=int, default=100)
     parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--queries_revision", type=str, default=None)
+    parser.add_argument("--documents_revision", type=str, default=None)
     args = parser.parse_args()
     print(args)
 
@@ -82,13 +85,20 @@ if __name__ == "__main__":
 
     with open(os.path.join(output_dir, "cli_args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
+    write_run_metadata(output_dir, run_config=vars(args), seed=args.seed)
 
     reranker = build_reranker_from_cli_args(args)
 
+    all_results = {}
     for task in args.tasks:
         print(f"Evaluating task: {task}")
-        all_results = {}
-        dataset = load_mair(task, instruct=True)
+        task_results = {}
+        dataset = load_mair(
+            task,
+            instruct=True,
+            queries_revision=args.queries_revision,
+            documents_revision=args.documents_revision,
+        )
         for split in dataset.keys():
             print(f"Evaluating split: {split}")
             if args.retriever == "bm25":
@@ -121,12 +131,15 @@ if __name__ == "__main__":
                 documents=rerank_documents,
                 doc_ids=rerank_doc_ids,
                 qrels=dataset[split]["qrels"],
+                seed=args.seed,
+                dataset_name=f"mair-{task}-{split}",
             )
 
-            all_results[split] = results
+            task_results[split] = results
             print(f"Results for {split}:")
             for metric, value in results.items():
                 print(f"{metric:<12}\t{value}") 
+        all_results[task] = task_results
 
     with open(os.path.join(output_dir, "results.json"), "w") as f:
         json.dump(all_results, f, indent=4, default=str)

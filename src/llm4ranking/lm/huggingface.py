@@ -191,7 +191,11 @@ class HFLM(LM):
 
     def generate(self, messages: list[dict[str, str]], **kwargs) -> LMOutput:
         batch_outputs = self.generate_batch([messages], **kwargs)
-        return LMOutput(text=batch_outputs.text[0])
+        return LMOutput(
+            text=batch_outputs.text[0],
+            input_tokens=batch_outputs.input_tokens[0],
+            output_tokens=batch_outputs.output_tokens[0],
+        )
 
     def generate_batch(
         self,
@@ -216,7 +220,14 @@ class HFLM(LM):
             )[:, input_ids.shape[-1] :].cpu()
 
         output_texts = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        return BatchLMOutput(text=output_texts)
+        return BatchLMOutput(
+            text=output_texts,
+            input_tokens=attention_mask.sum(dim=-1).cpu().tolist(),
+            output_tokens=[
+                len(self.tokenizer.encode(text, add_special_tokens=False))
+                for text in output_texts
+            ],
+        )
 
     def loglikelihood(self, messages: list[dict[str, str]], **kwargs) -> LMOutput:
         """Get the loglikelihood of the model.
@@ -233,6 +244,8 @@ class HFLM(LM):
         return LMOutput(
             text=batch_outputs.text[0],
             loglikelihood=batch_outputs.loglikelihood[0],
+            input_tokens=batch_outputs.input_tokens[0],
+            output_tokens=batch_outputs.output_tokens[0],
         )
 
     def loglikelihood_batch(
@@ -269,6 +282,8 @@ class HFLM(LM):
         return BatchLMOutput(
             text=[messages[-1]["content"] for messages in batch_messages],
             loglikelihood=loglikelihoods,
+            input_tokens=attention_mask.sum(dim=-1).cpu().tolist(),
+            output_tokens=labels.ne(-100).sum(dim=-1).cpu().tolist(),
         )
 
     def logits(
@@ -285,7 +300,11 @@ class HFLM(LM):
             Either the logits of the last token of the input messages or a LMOutput object containing the logits and the number of tokens
         """
         batch_outputs = self.logits_batch([messages], token=token, **kwargs)
-        return LMOutput(logits=batch_outputs.logits[0])
+        return LMOutput(
+            logits=batch_outputs.logits[0],
+            input_tokens=batch_outputs.input_tokens[0],
+            output_tokens=batch_outputs.output_tokens[0],
+        )
 
     def logits_batch(
         self,
@@ -313,7 +332,11 @@ class HFLM(LM):
         for batch_idx, last_idx in enumerate(last_indices.tolist()):
             one_logits = logits[batch_idx, last_idx, :].numpy()
             batch_logits.append(self._filter_logits(one_logits, token))
-        return BatchLMOutput(logits=batch_logits)
+        return BatchLMOutput(
+            logits=batch_logits,
+            input_tokens=attention_mask.sum(dim=-1).cpu().tolist(),
+            output_tokens=[1] * len(batch_messages),
+        )
 
     def _mask_labels(
         self,

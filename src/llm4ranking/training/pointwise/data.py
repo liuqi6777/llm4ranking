@@ -1,9 +1,12 @@
-import ujson as json
-from typing import Dict, List, Sequence, Any
 import random
+from typing import Any, Sequence
+
 import torch
+import ujson as json
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer
+
+from llm4ranking.training.pointwise.schema import normalize_pointwise_sample
 
 
 PROMPT = """Document: {document}
@@ -22,16 +25,13 @@ class PointwiseDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> dict[str, list[dict[str, str]]]:
+    def __getitem__(self, idx: int) -> list[list[dict[str, str]]]:
         sample = self.samples[idx]
-        query = sample['query']
-
-        positives = sample["positive"]
-        negatives = sample["negative"]
+        query, positives, negatives = normalize_pointwise_sample(sample)
         if len(negatives) < self.num_negatives:
             negatives = negatives + [""] * (self.num_negatives - len(negatives))
         negatives = random.sample(negatives, self.num_negatives)
-        docs = [positives] + negatives
+        docs = [positives[0]] + negatives
 
         prompts = [PROMPT.format(query=query, document=doc) for doc in docs]
         messages = [[{"role": "user", "content": prompt}] for prompt in prompts]
@@ -39,15 +39,16 @@ class PointwiseDataset(Dataset):
 
 
 class DataCollatorForPointwise:
-    def __init__(self, tokenizer: PreTrainedTokenizer):
+    def __init__(self, tokenizer: PreTrainedTokenizer, max_length: int | None = None):
         self.tokenizer = tokenizer
+        self.max_length = max_length or tokenizer.model_max_length
 
     def __call__(self, instances: Sequence[list]) -> dict[str, torch.Tensor]:
         messages = [message for instance in instances for message in instance]
         model_inputs = self.tokenizer.apply_chat_template(
             messages, 
             padding=True, padding_side="left",
-            max_length=256, truncation=True,
+            max_length=self.max_length, truncation=True,
             return_tensors='pt',
             add_generation_prompt=True,
             enable_thinking=False,
@@ -82,8 +83,9 @@ class DistillationDataset(Dataset):
 
 
 class DataCollatorForDistillation:
-    def __init__(self, tokenizer: PreTrainedTokenizer):
+    def __init__(self, tokenizer: PreTrainedTokenizer, max_length: int | None = None):
         self.tokenizer = tokenizer
+        self.max_length = max_length or tokenizer.model_max_length
 
     def __call__(self, instances: Sequence[list]) -> dict[str, torch.Tensor]:
         messages, ranking = tuple([instance[key] for instance in instances] for key in ("messages", "ranking"))
@@ -91,7 +93,7 @@ class DataCollatorForDistillation:
         model_inputs = self.tokenizer.apply_chat_template(
             messages,
             padding=True, padding_side="left",
-            max_length=256, truncation=True,
+            max_length=self.max_length, truncation=True,
             return_tensors='pt',
             add_generation_prompt=True,
             enable_thinking=False,
@@ -105,19 +107,19 @@ class DataCollatorForDistillation:
         )
 
 
-def make_data_module(tokenizer, data_args):
+def make_data_module(tokenizer, data_args, max_length: int | None = None):
     if data_args.data_type == "pointwise":
          train_dataset = PointwiseDataset(data_path=data_args.data_path, num_negatives=data_args.num_negatives)
          eval_dataset = None
          if data_args.eval_data_path:
              eval_dataset = PointwiseDataset(data_path=data_args.eval_data_path, num_negatives=data_args.num_negatives)
-         data_collator = DataCollatorForPointwise(tokenizer)
+         data_collator = DataCollatorForPointwise(tokenizer, max_length)
     elif data_args.data_type == "listwise":
         train_dataset = DistillationDataset(data_path=data_args.data_path)
         eval_dataset = None
         if data_args.eval_data_path:
             eval_dataset = DistillationDataset(data_path=data_args.eval_data_path)
-        data_collator = DataCollatorForDistillation(tokenizer)
+        data_collator = DataCollatorForDistillation(tokenizer, max_length)
     else:
         raise ValueError(f"Unknown data_type: {data_args.data_type}")
     return {
