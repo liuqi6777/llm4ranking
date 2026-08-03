@@ -11,6 +11,12 @@ cd llm4ranking
 pip install -e .
 ```
 
+Install the optional vLLM backend with:
+
+```bash
+pip install -e ".[vllm]"
+```
+
 ## Minimal Usage Example
 
 To illustrate the fundamental functionality of our framework, we provide a minimal usage example that can rerank documents using just a few lines of code:
@@ -43,7 +49,21 @@ print(result.indices)
 
 ### Supported LLMs
 
-The framework supports both open-source and commercial LLMs. For open-source LLMs, we support Hugging Face Transformers. For commercial LLMs, we support OpenAI and other LLMs that are compatible with the OpenAI API.
+The framework supports Hugging Face Transformers, vLLM, OpenAI, and other APIs compatible with the OpenAI API. The vLLM backend supports batched generation, assistant-response log likelihood, and batched next-token scoring:
+
+```python
+reranker = Reranker(
+    reranking_approach="rel-gen",
+    model_type="vllm",
+    model_name="Qwen/Qwen2.5-7B-Instruct",
+    model_args={
+        "tensor_parallel_size": 1,
+        "chat_template_kwargs": {"enable_thinking": False},
+    },
+)
+```
+
+The `logits` interface returns vLLM next-token log probabilities. They are equivalent to raw logits for softmax and ranking because they differ by a token-independent normalization constant. Full-vocabulary scoring, as used by FIRST, can consume substantially more host memory than scoring a short label-token list.
 
 ### Supported Reranking Models
 
